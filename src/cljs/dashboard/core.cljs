@@ -73,10 +73,10 @@
 
 (defn format-hours [hrs]
   ;; (/ (Math/round (* 100 (/ min 60))) 100)
-  (if (or (not (number? hrs))
-          (zero? hrs))
-    "-"
-    (.toFixed hrs 2)))
+  (cond
+    (zero? hrs) "-"
+    (number? hrs) (.toFixed hrs 2)
+    (string? hrs) hrs))
 
 
 (comment
@@ -194,34 +194,35 @@
   []
   (let [
         labs-billable (map (partial time-spent-on-projid (get +lab-projects+ "Labs Billable")) labster-ids)
-        others-billable (map (partial time-spent-on-projid (get +lab-projects+ "Others Billable")) labster-ids)
+        others-billable (repeat 9 0)
         administration (map (partial time-spent-on-projid (get +lab-projects+ "Administration")) labster-ids)
         experiments (map (partial time-spent-on-projid (get +lab-projects+ "Experiments")) labster-ids)
         studies (map (partial time-spent-on-projid (get +lab-projects+ "Studies")) labster-ids)
         personal-sum #("todo")
-        percent #(str (/ % 100) \%)
         sum (partial reduce +)
-        percentsum (comp percent sum)
-        todo "todo"
-        ]
+        sum-all (reduce + (map sum [labs-billable others-billable administration experiments studies]))
+        percentall #(str (.toFixed (/ (* 100 (sum %)) sum-all) 2) \%)
+        todo "todo"]
   `[
-    ["-" ~@labster-names "SUM" "SUM PCT"]
-    ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~todo]
-    ["Others Billable" ~@others-billable ~(sum others-billable) ~todo]
-    ["Administration" ~@administration ~(sum administration) ~todo]
-    ["Experiments" ~@experiments ~(sum experiments) ~todo]
-    ["Studies" ~@studies ~(sum studies) ~todo]
-    ["SUM" ~@(repeat 9 todo) ~todo ~todo]
+    ["-" ~@labster-names "SUM" "PCT"]
+    ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~(percentall labs-billable)]
+    ["Others Billable" ~@others-billable ~(sum others-billable) ~(percentall others-billable)]
+    ["Administration" ~@administration ~(sum administration) ~(percentall administration)]
+    ["Experiments" ~@experiments ~(sum experiments) ~(percentall experiments)]
+    ["Studies" ~@studies ~(sum studies) ~(percentall studies)]
+    ["SUM" ~@(repeat 9 todo) ~sum-all "100% (hopefully)" ]
     ]))
 
 
 (defn dashboard-page []
   (let [matrix (billing-matrix)
-        matrix-row #(vector :tr
-                    (vector :th (first (get matrix %)))
-                    (map (comp (partial vector :td)
-                               (partial format-hours))
-                         (rest (get matrix %))) )]
+        matrix-row #(let [r (get matrix %)]
+                      (vector :tr
+                              (vector :th (first r))
+                              (map (comp (partial vector :td)
+                                         (partial format-hours))
+                                   (rest (butlast r)))
+                              (vector :td (last r))))]
     [:div
      [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
       [:thead
