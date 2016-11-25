@@ -18,11 +18,6 @@
 (defonce conn (d/create-conn nil))
 
 
-(d/listen! conn
-           (fn [tx-report]
-             ;; (prn tx-report)
-             (reagent/force-update-all)))
-
 
 ;;------- get data
 (defn <time-entry
@@ -40,7 +35,8 @@
                                           (->> data
                                                :body
                                                :Entries
-                                               (d/transact! db)))))
+                                               (d/transact! db))
+                                           (reagent/force-update-all))))
 
 
 ;; ----- hardcoded data
@@ -58,13 +54,23 @@
 (def labster-names (map first +labsters+))
 (def labster-ids (map second +labsters+))
 
+;;;     :IsClientBillable true, ?
+(def +lab-projects+ {"Labs Billable" 23409
+                     "Administration"  16897
+                     "Studies" 23405
+                     "Experiments" 23404
+                     "Promo" 22295})
+
+(def lab-project-ids (vals +lab-projects+))
+
 
 ;;----------- db stuff
 
 (defn transact-users! [db users]
   (doseq [l users]
     (d/transact! db [{:person/name (first l)
-                      :person/userid (second l)}])))
+                      :person/userid (second l)}]))
+  (reagent/force-update-all))
 
 (when (= @(d/create-conn nil) (d/empty-db))
   (transact-users! conn +labsters+ )
@@ -79,54 +85,18 @@
     (string? hrs) hrs))
 
 
-(comment
-  (prn
-   (count
-    (d/q '[:find ?name ?duration
-           :where
-           [?p :ProjectName ?name]
-           [?p :Duration ?duration]
-           [(not= ?name "Klick Inc. - Klick Labs - Studies")]
-           [(not= ?name "Klick - Internal Project")]
-           ]
-         @conn
-         )))
-
-
- #_(d/q '[:find ?name ?duration
-        :in $ min-to-hours
-        :where
-        [?p :ProjectName ?name]
-        [?p :Duration ?d]
-        [(min-to-hours ?d) ?duration]]
-      @conn
-      #'min-to-hours))
-
 ;;---- QUERIES
-
-#_(defn total-hours-spent [db name]
-  (d/q '[:find (sum ?duration) .
-         :in $ min-to-hours ?name
-         :where
-         [?l :person/name ?name]
-         [?l :person/userid ?id]
-         [?p :UserID ?id]
-         [?p :ProjectName ?proj]
-         [?p :Duration ?d]
-         [(min-to-hours ?d) ?duration]
-         ]
-       @conn
-       #'min-to-hours
-       name))
 
 (defn time-spent-on-projs [name]
   (d/q '[:find ?p (sum ?duration) .
          :in $ ?name
+         :with ?projid
          :where
          [?l :person/name ?name]
          [?l :person/userid ?id]
          [?p :UserID ?id]
          [?p :ProjectName ?proj]
+         [?p :ProjectID ?projid]
          [?p :Duration ?d]
          [(/ ?d 60) ?duration]
          ]
@@ -137,6 +107,7 @@
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid ?projid
+          :with ?projid
           :where
           [?p :UserID ?uid]
           [?p :ProjectID ?projid]
@@ -148,30 +119,72 @@
         projid)
    0))
 
+(defn time-spent-not-billable [uid]
+  (or
+   (d/q '[:find (sum ?duration) .
+          :in $ ?uid
+          :with ?pid
+          :where
+          [?p :UserID ?uid]
+          [?p :IsClientBillable false]
+          [?p :Duration ?mins]
+          [?p :ProjectID ?pid]
+          [(/ ?mins 60) ?duration]
+          ;; +labs-projects+
+          [(not= ?pid 23409)]
+          [(not= ?pid 16897)]
+          [(not= ?pid 23405)]
+          [(not= ?pid 23404)]
+          [(not= ?pid 22295)]
+          ]
+        @conn
+        uid)
+   0))
+
+(defn time-spent-on-billable-projects [uid]
+  (or
+   (d/q '[:find (sum ?duration) .
+          :in $ ?uid
+          :with ?pid
+          :where
+          [?p :UserID ?uid]
+          [?p :IsClientBillable true]
+          [?p :Duration ?mins]
+          [?p :ProjectID ?pid]
+          [(/ ?mins 60) ?duration]
+          ;; +labs-projects+
+          [(not= ?pid 23409)]
+          [(not= ?pid 16897)]
+          [(not= ?pid 23405)]
+          [(not= ?pid 23404)]
+          [(not= ?pid 22295)]
+          ]
+        @conn
+        uid)
+   0))
+
+(defn total-time-booked [uid]
+  (or
+   (d/q '[:find (sum ?duration) .
+          :in $ ?uid
+          :with ?pid
+          :where
+          [?p :UserID ?uid]
+          [?p :Duration ?mins]
+          [?p :ProjectID ?pid]
+          [(/ ?mins 60) ?duration]
+          ]
+        @conn
+        uid)
+   0))
+
+
 ;; Duration by project
 (defn q [query]
   (prn
    (d/q query
         @conn
         )))
-
-(comment
-  (q '[:find ?name ?project (sum ?mins)
-       :where
-       [?p :person/name ?name]
-       [?p :person/name "Max"]
-       [?p :person/userid ?id]
-       [?x :ProjectName ?project]
-       [? :UserID ?id]
-       [?x :Duration ?mins]]))
-
-
-;;;     :IsClientBillable true, ?
-(def +lab-projects+ {"Labs Billable" 23409
-                     "Administration"  16897
-                     "Studies" 23405
-                     "Experiments" 23404
-                     "Promo" 22295})
 
 
 ;; -------------------------
@@ -194,23 +207,27 @@
   []
   (let [
         labs-billable (map (partial time-spent-on-projid (get +lab-projects+ "Labs Billable")) labster-ids)
-        others-billable (repeat 9 0)
+        others-billable (map (partial time-spent-on-billable-projects) labster-ids)
+        others-unbillable (map (partial time-spent-not-billable) labster-ids)
         administration (map (partial time-spent-on-projid (get +lab-projects+ "Administration")) labster-ids)
         experiments (map (partial time-spent-on-projid (get +lab-projects+ "Experiments")) labster-ids)
         studies (map (partial time-spent-on-projid (get +lab-projects+ "Studies")) labster-ids)
-        personal-sum #("todo")
+        promo (map (partial time-spent-on-projid (get +lab-projects+ "Promo")) labster-ids)
+        personal-sum (map total-time-booked labster-ids)
         sum (partial reduce +)
-        sum-all (reduce + (map sum [labs-billable others-billable administration experiments studies]))
+        sum-all (reduce + personal-sum)
         percentall #(str (.toFixed (/ (* 100 (sum %)) sum-all) 2) \%)
         todo "todo"]
   `[
     ["-" ~@labster-names "SUM" "PCT"]
     ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~(percentall labs-billable)]
     ["Others Billable" ~@others-billable ~(sum others-billable) ~(percentall others-billable)]
+    ["Others NOT Billable" ~@others-unbillable ~(sum others-unbillable) ~(percentall others-unbillable)]
     ["Administration" ~@administration ~(sum administration) ~(percentall administration)]
     ["Experiments" ~@experiments ~(sum experiments) ~(percentall experiments)]
     ["Studies" ~@studies ~(sum studies) ~(percentall studies)]
-    ["SUM" ~@(repeat 9 todo) ~sum-all "100% (hopefully)" ]
+    ["Promo" ~@promo ~(sum promo) ~(percentall promo)]
+    ["SUM" ~@personal-sum ~sum-all "100% (hopefully)" ]
     ]))
 
 
@@ -237,6 +254,8 @@
        (matrix-row 4)
        (matrix-row 5)
        (matrix-row 6)
+       (matrix-row 7)
+       (matrix-row 8)
 
        ]]]))
 
