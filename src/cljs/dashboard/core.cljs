@@ -71,16 +71,29 @@
   (transact-time-entries! conn "2016-11-21" "2016-11-25" labster-ids)
   )
 
-(defn min-to-hours [min]
+(defn format-hours [hrs]
   ;; (/ (Math/round (* 100 (/ min 60))) 100)
-  (-> min
-      (/ ,,, 60)
-      (.toFixed ,,, 2)
-      (js/parseFloat)))
+  (if (or (not (number? hrs))
+          (zero? hrs))
+    "-"
+    (.toFixed hrs 2)))
 
 
 (comment
- (d/q '[:find ?name ?duration
+  (prn
+   (count
+    (d/q '[:find ?name ?duration
+           :where
+           [?p :ProjectName ?name]
+           [?p :Duration ?duration]
+           [(not= ?name "Klick Inc. - Klick Labs - Studies")]
+           [(not= ?name "Klick - Internal Project")]
+           ]
+         @conn
+         )))
+
+
+ #_(d/q '[:find ?name ?duration
         :in $ min-to-hours
         :where
         [?p :ProjectName ?name]
@@ -108,31 +121,32 @@
 
 (defn time-spent-on-projs [name]
   (d/q '[:find ?p (sum ?duration) .
-         :in $ min-to-hours ?name
+         :in $ ?name
          :where
          [?l :person/name ?name]
          [?l :person/userid ?id]
          [?p :UserID ?id]
          [?p :ProjectName ?proj]
          [?p :Duration ?d]
-         [(min-to-hours ?d) ?duration]
+         [(/ ?d 60) ?duration]
          ]
        @conn
-       #'min-to-hours
        name))
 
 (defn time-spent-on-projid [projid uid]
-  (some-> (d/q '[:find (sum ?mins) .
-                 :in $ ?uid ?projid
-                 :where
-                 [?p :UserID ?uid]
-                 [?p :ProjectID ?projid]
-                 [?p :Duration ?mins]
-                 ]
-               @conn
-               uid
-               projid)
-          min-to-hours))
+  (or
+   (d/q '[:find (sum ?duration) .
+          :in $ ?uid ?projid
+          :where
+          [?p :UserID ?uid]
+          [?p :ProjectID ?projid]
+          [?p :Duration ?mins]
+          [(/ ?mins 60) ?duration]
+          ]
+        @conn
+        uid
+        projid)
+   0))
 
 ;; Duration by project
 (defn q [query]
@@ -174,71 +188,56 @@
 (defn current-page []
   [:div [(session/get :current-page)]])
 
-(defn project-hours [projid uid]
-  (vector :td (or (time-spent-on-projid projid uid) "-")))
+
+(defn billing-matrix
+  ""
+  []
+  (let [
+        labs-billable (map (partial time-spent-on-projid (get +lab-projects+ "Labs Billable")) labster-ids)
+        others-billable (map (partial time-spent-on-projid (get +lab-projects+ "Others Billable")) labster-ids)
+        administration (map (partial time-spent-on-projid (get +lab-projects+ "Administration")) labster-ids)
+        experiments (map (partial time-spent-on-projid (get +lab-projects+ "Experiments")) labster-ids)
+        studies (map (partial time-spent-on-projid (get +lab-projects+ "Studies")) labster-ids)
+        personal-sum #("todo")
+        percent #(str (/ % 100) \%)
+        sum (partial reduce +)
+        percentsum (comp percent sum)
+        todo "todo"
+        ]
+  `[
+    ["-" ~@labster-names "SUM" "SUM PCT"]
+    ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~todo]
+    ["Others Billable" ~@others-billable ~(sum others-billable) ~todo]
+    ["Administration" ~@administration ~(sum administration) ~todo]
+    ["Experiments" ~@experiments ~(sum experiments) ~todo]
+    ["Studies" ~@studies ~(sum studies) ~todo]
+    ["SUM" ~@(repeat 9 todo) ~todo ~todo]
+    ]))
 
 
 (defn dashboard-page []
-  [:div
-   [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
-    [:thead
-     [:tr
-      [:th "-"]
-      (map (partial vector :th) labster-names)
-      [:th "SUM"]
-      [:th "SUM PCT"]]]
+  (let [matrix (billing-matrix)
+        matrix-row #(vector :tr
+                    (vector :th (first (get matrix %)))
+                    (map (comp (partial vector :td)
+                               (partial format-hours))
+                         (rest (get matrix %))) )]
+    [:div
+     [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
+      [:thead
+       [:tr
+        (map (partial vector :th) (get matrix 0))
+       ]]
 
-    [:tbody
-     [:tr
-      [:th "Labs Billable"]
-      (map (partial project-hours (get +lab-projects+ "Labs Billable")) labster-ids)
-      [:td "todo"]
-      [:td "todo"]
-      ]
+      [:tbody
+       (matrix-row 1)
+       (matrix-row 2)
+       (matrix-row 3)
+       (matrix-row 4)
+       (matrix-row 5)
+       (matrix-row 6)
 
-     [:tr
-      [:th "Others Billable"]
-      (repeat 11 [:td "todo"])]
-
-     [:tr
-      [:th "Others Unbillable"]
-      (repeat 11 [:td "todo"])]
-
-
-     [:tr
-      [:th "Promo"]
-      (map (partial project-hours  (get +lab-projects+ "Promo")) labster-ids)
-      [:td "todo"]
-      [:td "todo"]
-      ]
-
-     [:tr
-      [:th "Administration"]
-      (map (partial project-hours  (get +lab-projects+ "Administration")) labster-ids)
-      [:td "todo"]
-      [:td "todo"]
-      ]
-
-     [:tr
-      [:th "Experiments"]
-      (map (partial project-hours  (get +lab-projects+ "Experiments")) labster-ids)
-      [:td "todo"]
-      [:td "todo"]
-]
-
-     [:tr
-      [:th "Studies"]
-      (map (partial project-hours  (get +lab-projects+ "Studies")) labster-ids)
-      [:td "todo"]
-      [:td "todo"]
-]
-
-
-     [:tr
-      [:th "SUM"]
-      (repeat 11 [:td "todo"])]
-
-     ]]])
+       ]]]))
 
 ;; -------------------------
 ;; Routes
