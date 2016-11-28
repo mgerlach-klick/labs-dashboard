@@ -17,11 +17,13 @@
                  [secretary "1.2.3"]
                  [venantius/accountant "0.1.7" :exclusions [org.clojure/tools.reader]]
 
-                  ;;-----
-                  [datascript "0.15.5"]
-                  [org.clojure/core.async "0.2.395"]
-                  [cljs-http "0.1.42"]
-                  ]
+                 ;;-----
+                 [datascript "0.15.5"]
+                 [org.clojure/core.async "0.2.395"]
+                 [cljs-http "0.1.42"]
+                 [com.andrewmcveigh/cljs-time "0.4.0"]
+
+                 ]
 
   :plugins [[lein-environ "1.0.2"]
             [lein-cljsbuild "1.1.1"]

@@ -10,33 +10,40 @@
               [cljs.pprint :as pprint]
               [goog.string :as gstring]
               [goog.string.format]
+              [cljs-time.core :as t]
+              [cljs-time.format :as tf]
               ))
+
+
 
 (enable-console-print!)
 
 
-(defonce conn (d/create-conn nil))
+
+
+;;------- time stuff
+(def date-formatter (tf/formatters :year-month-day))
+(def date-format (partial tf/unparse date-formatter))
+(defn last-n-months [n] (mapv date-format [(-> n t/months t/ago) (t/now)]))
 
 
 
-;;------- get data
-(defn <time-entry
-  ""
-  [start end userids]
-  (let [userids* (if (coll? userids) userids (vector userids))]
-    (->  (str "https://genome.klick.com/api/TimeEntry.json"
-              "?EndDate=" end "T23:59:59-04:00"
-              "&StartDate=" start "T00:00:00-04:00"
-              "&UserIDs=[" (apply str (interpose \,  userids*)) "]")
-         (http/jsonp))))
 
-(defn transact-time-entries! [db start end userids]
-  (take! (<time-entry start end userids) (fn [data]
-                                          (->> data
-                                               :body
-                                               :Entries
-                                               (d/transact! db))
-                                           (reagent/force-update-all))))
+;;-------- application state
+
+(def db-schema {
+                :UserID {:db/valueType :db.type/ref}
+                :person/userid {:db/unique :db.unique/identity}})
+
+(defonce conn (d/create-conn db-schema ))
+
+(defonce timespan (reagent/atom {:from (first (last-n-months 1))
+                                 :to (second (last-n-months 1))}))
+
+
+
+
+
 
 
 ;; ----- hardcoded data
@@ -54,7 +61,6 @@
 (def labster-names (map first +labsters+))
 (def labster-ids (map second +labsters+))
 
-;;;     :IsClientBillable true, ?
 (def +lab-projects+ {"Labs Billable" 23409
                      "Administration"  16897
                      "Studies" 23405
@@ -64,17 +70,60 @@
 (def lab-project-ids (vals +lab-projects+))
 
 
+
+
+
+
+
+
+;;------- get data
+(defn <time-entry
+  ""
+  [start end userids]
+  (let [userids* (if (coll? userids) userids (vector userids))]
+    (->  (str "https://genome.klick.com/api/TimeEntry.json"
+              "?EndDate=" end ;"T23:59:59-04:00"
+              "&StartDate=" start ;"T00:00:00-04:00"
+              "&UserIDs=[" (apply str (interpose \,  userids*)) "]")
+         (http/jsonp))))
+
+(defn transact-time-entries! [db start end userids]
+  (prn "Getting time entries from" start "to" end)
+  (take! (<time-entry start end userids) (fn [data]
+                                           (->> data
+                                                :body
+                                                :Entries
+                                                (d/transact! db))
+                                           (prn "received" (count (-> data :body :Entries)) "records")
+                                           ;; (pprint/pprint data)
+                                           (reagent/force-update-all))))
+
+(defn get-labster-time-entries [start end]
+  (transact-time-entries! conn start end labster-ids))
+
+
+
+
+
+
+
+
+
+
+
+
 ;;----------- db stuff
 
 (defn transact-users! [db users]
   (doseq [l users]
     (d/transact! db [{:person/name (first l)
-                      :person/userid (second l)}]))
-  (reagent/force-update-all))
+                      :person/userid (second l)}])))
 
-(when (= @(d/create-conn nil) (d/empty-db))
+
+(defn new-database [start end]
+  (d/reset-conn! conn (d/empty-db db-schema))
   (transact-users! conn +labsters+ )
-  (transact-time-entries! conn "2016-11-21" "2016-11-25" labster-ids)
+  (get-labster-time-entries start end)
   )
 
 (defn format-hours [hrs]
@@ -85,18 +134,23 @@
     (string? hrs) hrs))
 
 
+;;-------- GO GO GO
+(when (= @conn (d/empty-db db-schema))
+  (let [[from to] (last-n-months 1)]
+    (new-database from to)))
+
+
 ;;---- QUERIES
 
 (defn time-spent-on-projs [name]
   (d/q '[:find ?p (sum ?duration) .
          :in $ ?name
-         :with ?projid
+         :with ?p
          :where
          [?l :person/name ?name]
          [?l :person/userid ?id]
          [?p :UserID ?id]
          [?p :ProjectName ?proj]
-         [?p :ProjectID ?projid]
          [?p :Duration ?d]
          [(/ ?d 60) ?duration]
          ]
@@ -107,7 +161,7 @@
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid ?projid
-          :with ?projid
+          :with ?p
           :where
           [?p :UserID ?uid]
           [?p :ProjectID ?projid]
@@ -123,14 +177,15 @@
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid
-          :with ?pid
+          :with ?p
           :where
           [?p :UserID ?uid]
           [?p :IsClientBillable false]
           [?p :Duration ?mins]
-          [?p :ProjectID ?pid]
           [(/ ?mins 60) ?duration]
           ;; +labs-projects+
+          [(get-else $ ?e :IsClientBillable false)]
+          ;; [(= :nil ?nobill)]
           [(not= ?pid 23409)]
           [(not= ?pid 16897)]
           [(not= ?pid 23405)]
@@ -145,12 +200,11 @@
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid
-          :with ?pid
+          :with ?p
           :where
           [?p :UserID ?uid]
           [?p :IsClientBillable true]
           [?p :Duration ?mins]
-          [?p :ProjectID ?pid]
           [(/ ?mins 60) ?duration]
           ;; +labs-projects+
           [(not= ?pid 23409)]
@@ -163,15 +217,15 @@
         uid)
    0))
 
+
 (defn total-time-booked [uid]
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid
-          :with ?pid
+          :with ?p
           :where
           [?p :UserID ?uid]
           [?p :Duration ?mins]
-          [?p :ProjectID ?pid]
           [(/ ?mins 60) ?duration]
           ]
         @conn
@@ -206,18 +260,20 @@
   ""
   []
   (let [
-        labs-billable (map (partial time-spent-on-projid (get +lab-projects+ "Labs Billable")) labster-ids)
+        labster-time-spent-on (fn [proj-name]
+                                (map (partial time-spent-on-projid (get +lab-projects+ proj-name)) labster-ids))
+        labs-billable (labster-time-spent-on "Labs Billable")
         others-billable (map (partial time-spent-on-billable-projects) labster-ids)
         others-unbillable (map (partial time-spent-not-billable) labster-ids)
-        administration (map (partial time-spent-on-projid (get +lab-projects+ "Administration")) labster-ids)
-        experiments (map (partial time-spent-on-projid (get +lab-projects+ "Experiments")) labster-ids)
-        studies (map (partial time-spent-on-projid (get +lab-projects+ "Studies")) labster-ids)
-        promo (map (partial time-spent-on-projid (get +lab-projects+ "Promo")) labster-ids)
+        administration (labster-time-spent-on "Administration")
+        experiments (labster-time-spent-on "Experiments")
+        studies (labster-time-spent-on "Studies")
+        promo (labster-time-spent-on  "Promo")
         personal-sum (map total-time-booked labster-ids)
         sum (partial reduce +)
         sum-all (reduce + personal-sum)
         percentall #(str (.toFixed (/ (* 100 (sum %)) sum-all) 2) \%)
-        todo "todo"]
+        ]
   `[
     ["-" ~@labster-names "SUM" "PCT"]
     ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~(percentall labs-billable)]
@@ -231,7 +287,7 @@
     ]))
 
 
-(defn dashboard-page []
+(defn dashboard-table []
   (let [matrix (billing-matrix)
         matrix-row #(let [r (get matrix %)]
                       (vector :tr
@@ -240,24 +296,37 @@
                                          (partial format-hours))
                                    (rest (butlast r)))
                               (vector :td (last r))))]
-    [:div
+    [:div.row
      [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
       [:thead
-       [:tr
+       [:tr ; names
         (map (partial vector :th) (get matrix 0))
-       ]]
+        ]]
 
       [:tbody
-       (matrix-row 1)
-       (matrix-row 2)
-       (matrix-row 3)
-       (matrix-row 4)
-       (matrix-row 5)
-       (matrix-row 6)
-       (matrix-row 7)
-       (matrix-row 8)
+       (for [idx (->> matrix
+                      count
+                      range
+                      rest)] ; the correct indices for the non-header fields
+         (matrix-row idx))]]]))
 
-       ]]]))
+(defn dashboard-page []
+  [:div.row
+   [:h1 "Labs Billability Dashboard"]
+   [:div.btn-default {:on-click #(let [[from to] (last-n-months 1)]
+                                   (swap! timespan assoc :from from)
+                                   (swap! timespan assoc :to to))} "Last Month"]
+   [:div.btn-default {:on-click #(let [[from to] (last-n-months 3)]
+                                   (swap! timespan assoc :from from)
+                                   (swap! timespan assoc :to to))} "Last 3 Months"]
+   [:div.btn-default {:on-click #(let [[from to] (last-n-months 6)]
+                                   (swap! timespan assoc :from from)
+                                   (swap! timespan assoc :to to))} "Last 6 Months"]
+   "From: " [:input {:type "text" :value (:from @timespan) :on-change #(swap! timespan assoc :from (-> % .-target .-value))}]
+   "To: "[:input {:type "text" :value (:to @timespan) :on-change #(swap! timespan assoc :to (-> % .-target .-value))}]
+   [:div.btn-primary {:on-click #(new-database (:from @timespan) (:to @timespan))} "Make it so" ]
+
+   [dashboard-table]])
 
 ;; -------------------------
 ;; Routes
