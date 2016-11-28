@@ -22,7 +22,7 @@
                  [org.clojure/core.async "0.2.395"]
                  [cljs-http "0.1.42"]
                  [com.andrewmcveigh/cljs-time "0.4.0"]
-
+                 [testdouble/clojurescript.csv "0.2.0"]
                  ]
 
   :plugins [[lein-environ "1.0.2"]

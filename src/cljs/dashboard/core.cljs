@@ -12,7 +12,19 @@
               [goog.string.format]
               [cljs-time.core :as t]
               [cljs-time.format :as tf]
+              [testdouble.cljs.csv :as csv]
               ))
+
+
+;;; TODO
+;;; - Make 'export to CSV' button
+;;; - Fill out last week's schedule, export it, and use it to write tests
+;;; - error handler for HTTP request to genome
+;;; - Maybe factor some stuff out into own modules
+;;; - input validation
+;;; - try to factor out "not-labs-project" rule
+
+
 
 
 
@@ -241,6 +253,16 @@
         )))
 
 
+
+;; ----------- site helpers
+(defn vec2csv
+  ""
+  [v]
+  (js/encodeURI
+   (str "data:text/csv;charset=utf-8,"
+        (csv/write-csv v))))
+
+
 ;; -------------------------
 ;; Views
 
@@ -311,22 +333,48 @@
          (matrix-row idx))]]]))
 
 (defn dashboard-page []
-  [:div.row
-   [:h1 "Labs Billability Dashboard"]
-   [:div.btn-default {:on-click #(let [[from to] (last-n-months 1)]
-                                   (swap! timespan assoc :from from)
-                                   (swap! timespan assoc :to to))} "Last Month"]
-   [:div.btn-default {:on-click #(let [[from to] (last-n-months 3)]
-                                   (swap! timespan assoc :from from)
-                                   (swap! timespan assoc :to to))} "Last 3 Months"]
-   [:div.btn-default {:on-click #(let [[from to] (last-n-months 6)]
-                                   (swap! timespan assoc :from from)
-                                   (swap! timespan assoc :to to))} "Last 6 Months"]
-   "From: " [:input {:type "text" :value (:from @timespan) :on-change #(swap! timespan assoc :from (-> % .-target .-value))}]
-   "To: "[:input {:type "text" :value (:to @timespan) :on-change #(swap! timespan assoc :to (-> % .-target .-value))}]
-   [:div.btn-primary {:on-click #(new-database (:from @timespan) (:to @timespan))} "Make it so" ]
+  [:div
+   [:div.row
+    [:div.col-sm-12
+     [:h1 "Labs Billability Dashboard"]]]
 
-   [dashboard-table]])
+   [:hr]
+
+   [:div.row
+    [:div.col-sm-4
+     [:p
+      [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 1)]
+                                          (swap! timespan assoc :from from)
+                                          (swap! timespan assoc :to to))} "Last Month"]]
+     [:p
+      [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 3)]
+                                          (swap! timespan assoc :from from)
+                                          (swap! timespan assoc :to to))} "Last 3 Months"]]
+     [:p
+      [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 6)]
+                                          (swap! timespan assoc :from from)
+                                          (swap! timespan assoc :to to))} "Last 6 Months"]]]
+
+    [:div.col-sm-4.text-right
+     [:p
+      "From: " [:input {:type "text" :value (:from @timespan) :on-change #(swap! timespan assoc :from (-> % .-target .-value))}]]
+     [:p
+      "To: " [:input {:type "text" :value (:to @timespan) :on-change #(swap! timespan assoc :to (-> % .-target .-value))}]]]
+
+    [:div.col-sm-4.text-right
+     [:div.btn-success.btn.btn-lg {:on-click #(new-database (:from @timespan) (:to @timespan))} "Make it so" ]
+     [:hr]
+     [:a {:href (vec2csv (billing-matrix)) :download (str "labs-billability_" (:from @timespan) "__" (:to @timespan) ".csv")}
+      [:div.btn-primary.btn  "Download as CSV" ]]
+     ]]
+
+   [:hr]
+
+   [:div.row
+    [:div.col-sm-12
+     [dashboard-table]]
+    [:h3.text-right {:style {:color "gray"}} (str (:from @timespan) " to " (:to @timespan))]]
+])
 
 ;; -------------------------
 ;; Routes
