@@ -262,7 +262,7 @@
   [v]
   (js/encodeURI
    (str "data:text/csv;charset=utf-8,"
-        (csv/write-csv v))))
+        (csv/write-csv v :quote true))))
 
 
 ;; -------------------------
@@ -364,7 +364,7 @@
    [:div.row
     [:div.col-sm-12
      [dashboard-table]]
-    [:h3.text-right {:style {:color "gray"}} (:last-fetch @timespan)]]
+    [:h3.text-right {:style {:color "gray"}}  (:last-fetch @timespan)]]
 ])
 
 
@@ -372,7 +372,7 @@
 ;; Initialize app
 
 (defn mount-root [root-element]
-  (reagent/render root-element (.getElementById js/document "app")))
+  (reagent/render [root-element] (.getElementById js/document "app")))
 
 (defn init! []
-  (mount-root (dashboard-page)))
+  (mount-root #'dashboard-page))
