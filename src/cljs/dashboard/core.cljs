@@ -50,7 +50,8 @@
 (defonce conn (d/create-conn db-schema ))
 
 (defonce timespan (reagent/atom {:from (first (last-n-months 1))
-                                 :to (second (last-n-months 1))}))
+                                 :to (second (last-n-months 1))
+                                 :last-fetch nil}))
 
 
 
@@ -101,14 +102,18 @@
 
 (defn transact-time-entries! [db start end userids]
   (prn "Getting time entries from" start "to" end)
-  (take! (<time-entry start end userids) (fn [data]
-                                           (->> data
-                                                :body
-                                                :Entries
-                                                (d/transact! db))
-                                           (prn "received" (count (-> data :body :Entries)) "records")
-                                           ;; (pprint/pprint data)
-                                           (reagent/force-update-all))))
+  (take! (<time-entry start end userids) (fn [response]
+                                           (prn (:status response))
+                                           (if-not (= (:status response) 200)
+                                             (js/alert "There has been an error while fetching the data from Genome. Are you sure that you're logged in?")
+                                             (do
+                                               (->> response
+                                                    :body
+                                                    :Entries
+                                                    (d/transact! db))
+                                               (prn "received" (count (-> response :body :Entries)) "records")
+                                               (swap! timespan assoc :last-fetch (str (:from @timespan) " to " (:to @timespan)))
+                                               (reagent/force-update-all))))))
 
 (defn get-labster-time-entries [start end]
   (transact-time-entries! conn start end labster-ids))
@@ -375,7 +380,7 @@
    [:div.row
     [:div.col-sm-12
      [dashboard-table]]
-    [:h3.text-right {:style {:color "gray"}} (str (:from @timespan) " to " (:to @timespan))]]
+    [:h3.text-right {:style {:color "gray"}} (:last-fetch @timespan)]]
 ])
 
 ;; -------------------------
