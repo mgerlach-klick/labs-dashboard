@@ -25,7 +25,7 @@
 
 (enable-console-print!)
 
-
+(declare calculate-billing-matrix )
 
 
 ;;------- time stuff
@@ -47,6 +47,8 @@
 (defonce timespan (reagent/atom {:from (first (last-n-months 1))
                                  :to (second (last-n-months 1))
                                  :last-fetch nil}))
+
+(defonce calculated-billing-matrix (atom nil))
 
 
 
@@ -108,6 +110,7 @@
                                                     (d/transact! db))
                                                (prn "received" (count (-> response :body :Entries)) "records")
                                                (swap! timespan assoc :last-fetch (str (:from @timespan) " to " (:to @timespan)))
+                                               (reset! calculated-billing-matrix (calculate-billing-matrix))
                                                (reagent/force-update-all))))))
 
 (defn get-labster-time-entries [start end]
@@ -265,11 +268,17 @@
         (csv/write-csv v :quote true))))
 
 
+(defn verify-is-date [d]
+  (if-not (re-matches #"\d{4}-\d{2}-\d{2}" d)
+    (js/alert (str \" d \" " is not a valid date!"))
+    d))
+
+
 ;; -------------------------
 ;; Views
 
 
-(defn billing-matrix
+(defn calculate-billing-matrix
   ""
   []
   (let [
@@ -301,7 +310,7 @@
 
 
 (defn dashboard-table []
-  (let [matrix (billing-matrix)
+  (let [matrix @calculated-billing-matrix
         matrix-row #(let [r (get matrix %)]
                       (vector :tr
                               (vector :th (first r))
@@ -348,14 +357,20 @@
 
     [:div.col-sm-4.text-right
      [:p
-      "From: " [:input {:type "text" :value (:from @timespan) :on-change #(swap! timespan assoc :from (-> % .-target .-value))}]]
+      "From: " [:input {:type "text"
+                        :value (:from @timespan)
+                        :on-change #(swap! timespan assoc :from (-> % .-target .-value))}]]
      [:p
-      "To: " [:input {:type "text" :value (:to @timespan) :on-change #(swap! timespan assoc :to (-> % .-target .-value))}]]]
+      "To: " [:input {:type "text"
+                      :value (:to @timespan)
+                      :on-change #(swap! timespan assoc :to (-> % .-target .-value))}]]]
 
     [:div.col-sm-4.text-right
-     [:div.btn-success.btn.btn-lg {:on-click #(new-database (:from @timespan) (:to @timespan))} "Make it so" ]
+     [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @timespan))
+                                                         (verify-is-date (:to @timespan)))
+                                                (new-database (:from @timespan) (:to @timespan)))} "Make it so" ]
      [:hr]
-     [:a {:href (vec2csv (billing-matrix)) :download (str "labs-billability_" (:from @timespan) "__" (:to @timespan) ".csv")}
+     [:a {:href (vec2csv @calculated-billing-matrix) :download (str "labs-billability_" (:from @timespan) "__" (:to @timespan) ".csv")}
       [:div.btn-primary.btn  "Download as CSV" ]]
      ]]
 
