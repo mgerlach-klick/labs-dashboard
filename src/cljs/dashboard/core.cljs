@@ -194,6 +194,7 @@
           [?p :UserID ?uid]
           [?p :IsClientBillable false]
           [?p :Duration ?mins]
+          [?p :ProjectID ?pid]
           [(/ ?mins 60) ?duration]
           ;; +labs-projects+
           [(get-else $ ?e :IsClientBillable false)]
@@ -215,6 +216,7 @@
           :with ?p
           :where
           [?p :UserID ?uid]
+          [?p :ProjectID ?pid]
           [?p :IsClientBillable true]
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
