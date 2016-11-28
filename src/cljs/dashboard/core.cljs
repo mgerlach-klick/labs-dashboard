@@ -1,9 +1,6 @@
 (ns dashboard.core
   (:require-macros [cljs.core.async.macros :refer [go]])
   (:require [reagent.core :as reagent :refer [atom]]
-              [reagent.session :as session]
-              [secretary.core :as secretary :include-macros true]
-              [accountant.core :as accountant]
               [cljs-http.client :as http]
               [cljs.core.async :refer [<! put! take!]]
               [datascript.core :as d]
@@ -17,9 +14,7 @@
 
 
 ;;; TODO
-;;; - Make 'export to CSV' button
 ;;; - Fill out last week's schedule, export it, and use it to write tests
-;;; - error handler for HTTP request to genome
 ;;; - Maybe factor some stuff out into own modules
 ;;; - input validation
 ;;; - try to factor out "not-labs-project" rule
@@ -273,17 +268,6 @@
 ;; -------------------------
 ;; Views
 
-(defn home-page []
-  [:div [:h2 "Welcome to dashboard"]
-   [:div [:a {:href "/about"} "go to about page"]]])
-
-(defn about-page []
-  [:div [:h2 "About dashboard"]
-   [:div [:a {:href "/"} "go to the home page"]]])
-
-(defn current-page []
-  [:div [(session/get :current-page)]])
-
 
 (defn billing-matrix
   ""
@@ -383,28 +367,12 @@
     [:h3.text-right {:style {:color "gray"}} (:last-fetch @timespan)]]
 ])
 
-;; -------------------------
-;; Routes
-
-(secretary/defroute "/" []
-  (session/put! :current-page #'dashboard-page))
-
-(secretary/defroute "/about" []
-  (session/put! :about-page #'about-page))
 
 ;; -------------------------
 ;; Initialize app
 
-(defn mount-root []
-  (reagent/render [current-page] (.getElementById js/document "app")))
+(defn mount-root [root-element]
+  (reagent/render root-element (.getElementById js/document "app")))
 
 (defn init! []
-  (accountant/configure-navigation!
-    {:nav-handler
-     (fn [path]
-       (secretary/dispatch! path))
-     :path-exists?
-     (fn [path]
-       (secretary/locate-route path))})
-  (accountant/dispatch-current!)
-  (mount-root))
+  (mount-root (dashboard-page)))
