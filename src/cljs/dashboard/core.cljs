@@ -299,8 +299,8 @@
   `[
     ["-" ~@labster-names "SUM" "PCT"]
     ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~(percentall labs-billable)]
-    ["Others Billable" ~@others-billable ~(sum others-billable) ~(percentall others-billable)]
-    ["Others NOT Billable" ~@others-unbillable ~(sum others-unbillable) ~(percentall others-unbillable)]
+    ["Klick Billable" ~@others-billable ~(sum others-billable) ~(percentall others-billable)]
+    ["Nonbillable" ~@others-unbillable ~(sum others-unbillable) ~(percentall others-unbillable)]
     ["Administration" ~@administration ~(sum administration) ~(percentall administration)]
     ["Experiments" ~@experiments ~(sum experiments) ~(percentall experiments)]
     ["Studies" ~@studies ~(sum studies) ~(percentall studies)]
@@ -352,8 +352,7 @@
                                           (swap! timespan assoc :to to))} "Last 3 Months"]]
      [:p
       [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 6)]
-                                          (swap! timespan assoc :from from)
-                                          (swap! timespan assoc :to to))} "Last 6 Months"]]]
+                                          (swap! timespan assoc :from fro)                                          (swap! timespan assoc :to to))} "Last 6 Months"]]]
 
     [:div.col-sm-4.text-right
      [:p
