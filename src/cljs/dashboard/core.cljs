@@ -51,11 +51,11 @@
 
 (defonce conn (d/create-conn db-schema ))
 
-(defonce app-db (reagent/atom {:from (first (last-n-months 1))
-                               :to (second (last-n-months 1))
-                               :last-fetch nil
-                               :calculated-billing-matrix nil
-                               :loading? true}))
+(defonce initial-state {:from (first (last-n-months 1))
+                        :to (second (last-n-months 1))
+                        :last-fetch nil
+                        :calculated-billing-matrix nil
+                        :loading? true})
 
 
 
@@ -115,10 +115,9 @@
                                                     :Entries
                                                     (d/transact! db))
                                                (prn "received" (count (-> response :body :Entries)) "records")
-                                               (swap! app-db assoc :last-fetch (str (:from @app-db) " to " (:to @app-db)))
-                                               (swap! app-db assoc :calculated-billing-matrix (calculate-billing-matrix))
-                                               (swap! app-db assoc :loading? false)
-                                               (reagent/force-update-all))))))
+                                               (dispatch [:update-last-fetch])
+                                               (dispatch [:calculate-billing-matrix])
+                                               (dispatch [:loading? false]))))))
 
 (defn get-labster-time-entries [start end]
   (transact-time-entries! conn start end labster-ids))
@@ -314,6 +313,57 @@
     ]))
 
 
+;; -- Event Handlers ----------------------------------------------------------
+(reg-event-db :initialize
+              (fn [db _]
+                (merge db initial-state)))
+
+
+(reg-event-db :loading?
+              (fn [db [_ yesno]]
+                (assoc db :loading? yesno)))
+
+(reg-event-db :set-from-to
+              (fn [db [_ [from to]]]
+                (assoc db
+                       :from from
+                       :to to)))
+
+(reg-event-db :update-last-fetch
+              (fn [db]
+                (assoc db :last-fetch (str (:from db) " to " (:to db)))))
+
+(reg-event-db :calculate-billing-matrix
+              (fn [db _]
+                (assoc db :calculated-billing-matrix (calculate-billing-matrix))))
+
+
+
+
+;; -- Subscription Handlers ---------------------------------------------------
+
+
+(reg-sub :from-to
+         (fn [db _]
+           (select-keys db [:from :to])))
+
+(reg-sub :billing-matrix
+         (fn [db _]
+            (:calculated-billing-matrix db)))
+
+(reg-sub :last-fetch
+         (fn [db _]
+           (:last-fetch db)))
+
+(reg-sub :loading?
+         (fn [db _]
+           (:loading? db)))
+
+
+
+; -- Components
+
+
 (defn dashboard-table [matrix]
   (let [matrix-row #(let [r (get matrix %)]
                       (vector :tr
@@ -326,8 +376,7 @@
          [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
           [:thead
            [:tr ; names
-            (map (partial vector :th) (get matrix 0))
-            ]]
+            (map (partial vector :th) (get matrix 0))]]
 
           [:tbody
            (for [idx (->> matrix
@@ -337,9 +386,12 @@
              (matrix-row idx))]]]))
 
 (defn dashboard-page []
-  (let [billing-matrix (reaction (:calculated-billing-matrix @app-db))
+  (let [billing-matrix (subscribe [:billing-matrix])
+        from-to (subscribe [:from-to])
+        last-fetch (subscribe [:last-fetch])
+        loading? (subscribe [:loading?])
         csv-billing-matrix (reaction (vec2csv @billing-matrix))
-        csv-billing-matrix-filename (reaction (str "labs-billability_" (:from @app-db) "__" (:to @app-db) ".csv"))]
+        csv-billing-matrix-filename (reaction (str "labs-billability_" (:from @from-to) "__" (:to @from-to) ".csv"))]
     (fn []
       [:div
        [:div.row
@@ -351,52 +403,47 @@
        [:div.row
         [:div.col-sm-4
          [:p
-          [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 1)]
-                                              (swap! app-db assoc :from from)
-                                              (swap! app-db assoc :to to))} "Last Month"]]
+          [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 1)])} "Last Month"]]
          [:p
-          [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 3)]
-                                              (swap! app-db assoc :from from)
-                                              (swap! app-db assoc :to to))} "Last 3 Months"]]
+          [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 3)])} "Last 3 Months"]]
          [:p
-          [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 6)]
-                                              (swap! app-db assoc :from from)
-                                              (swap! app-db assoc :to to))} "Last 6 Months"]]]
+          [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 6)])} "Last 6 Months"]]]
 
         [:div.col-sm-4.text-right
          [:p
           "From: " [:input {:type "text"
-                            :value (:from @app-db)
-                            :on-change #(swap! app-db assoc :from (-> % .-target .-value))}]]
+                            :value (:from @from-to)
+                            :on-change #(dispatch [:set-from-to [(-> % .-target .-value) (:to @from-to)]])}]]
          [:p
           "To: " [:input {:type "text"
-                          :value (:to @app-db)
-                          :on-change #(swap! app-db assoc :to (-> % .-target .-value))}]]]
+                          :value (:to @from-to)
+                          :on-change #(dispatch [:set-from-to [(:from @from-to) (-> % .-target .-value)]])}]]]
 
         [:div.col-sm-4.text-right
-         [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @app-db))
-                                                             (verify-is-date (:to @app-db)))
+         [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @from-to))
+                                                             (verify-is-date (:to @from-to)))
                                                     (do
-                                                      (swap! app-db assoc :loading? true)
-                                                      (new-database (:from @app-db) (:to @app-db))))} "Make it so" ]
+                                                      (dispatch [:loading? true])
+                                                      (new-database (:from @from-to) (:to @from-to))))} "Make it so" ]
          [:hr]
          [:a {:href @csv-billing-matrix :download @csv-billing-matrix-filename}
           [:div.btn-primary.btn  "Download as CSV" ]]]]
 
        [:hr]
 
-       (if (:loading? @app-db)
+       (if @loading?
          [:h3 "Loading..."]
          [:div.row
           [:div.col-sm-12
            [dashboard-table @billing-matrix]]
-          [:h3.text-right {:style {:color "gray"}}  (:last-fetch @app-db)]])])))
+          [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
 
 
 ;; -------------------------
 ;; Initialize app
 
 (defn mount-root [root-element]
+  (dispatch [:initialize])
   (reagent/render [root-element] (.getElementById js/document "app")))
 
 (defn init! []
