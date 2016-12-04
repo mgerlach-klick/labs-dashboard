@@ -1,5 +1,6 @@
 (ns dashboard.core
-  (:require-macros [cljs.core.async.macros :refer [go]])
+  (:require-macros [cljs.core.async.macros :refer [go]]
+                   [reagent.ratom :refer [reaction]])
   (:require [reagent.core :as reagent :refer [atom]]
               [cljs-http.client :as http]
               [cljs.core.async :refer [<! put! take!]]
@@ -10,14 +11,20 @@
               [cljs-time.core :as t]
               [cljs-time.format :as tf]
               [testdouble.cljs.csv :as csv]
+              [re-frame.core :refer [reg-event-db
+                                     path
+                                     reg-sub
+                                     dispatch
+                                     dispatch-sync
+                                     subscribe]]
               ))
 
 
 ;;; TODO
 ;;; - Fill out last week's schedule, export it, and use it to write tests
 ;;; - Maybe factor some stuff out into own modules
-;;; - input validation
 ;;; - try to factor out "not-labs-project" rule
+;;; - click to go to labster schedule / project page
 
 
 
@@ -44,12 +51,11 @@
 
 (defonce conn (d/create-conn db-schema ))
 
-(defonce timespan (reagent/atom {:from (first (last-n-months 1))
-                                 :to (second (last-n-months 1))
-                                 :last-fetch nil}))
-
-(defonce calculated-billing-matrix (atom nil))
-
+(defonce app-db (reagent/atom {:from (first (last-n-months 1))
+                               :to (second (last-n-months 1))
+                               :last-fetch nil
+                               :calculated-billing-matrix nil
+                               :loading? true}))
 
 
 
@@ -109,8 +115,9 @@
                                                     :Entries
                                                     (d/transact! db))
                                                (prn "received" (count (-> response :body :Entries)) "records")
-                                               (swap! timespan assoc :last-fetch (str (:from @timespan) " to " (:to @timespan)))
-                                               (reset! calculated-billing-matrix (calculate-billing-matrix))
+                                               (swap! app-db assoc :last-fetch (str (:from @app-db) " to " (:to @app-db)))
+                                               (swap! app-db assoc :calculated-billing-matrix (calculate-billing-matrix))
+                                               (swap! app-db assoc :loading? false)
                                                (reagent/force-update-all))))))
 
 (defn get-labster-time-entries [start end]
@@ -138,11 +145,9 @@
 (defn new-database [start end]
   (d/reset-conn! conn (d/empty-db db-schema))
   (transact-users! conn +labsters+ )
-  (get-labster-time-entries start end)
-  )
+  (get-labster-time-entries start end))
 
 (defn format-hours [hrs]
-  ;; (/ (Math/round (* 100 (/ min 60))) 100)
   (cond
     (zero? hrs) "-"
     (number? hrs) (.toFixed hrs 2)
@@ -309,77 +314,83 @@
     ]))
 
 
-(defn dashboard-table []
-  (let [matrix @calculated-billing-matrix
-        matrix-row #(let [r (get matrix %)]
+(defn dashboard-table [matrix]
+  (let [matrix-row #(let [r (get matrix %)]
                       (vector :tr
                               (vector :th (first r))
                               (map (comp (partial vector :td)
                                          (partial format-hours))
                                    (rest (butlast r)))
                               (vector :td (last r))))]
-    [:div.row
-     [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
-      [:thead
-       [:tr ; names
-        (map (partial vector :th) (get matrix 0))
-        ]]
+        [:div.row
+         [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
+          [:thead
+           [:tr ; names
+            (map (partial vector :th) (get matrix 0))
+            ]]
 
-      [:tbody
-       (for [idx (->> matrix
-                      count
-                      range
-                      rest)] ; the correct indices for the non-header fields
-         (matrix-row idx))]]]))
+          [:tbody
+           (for [idx (->> matrix
+                          count
+                          range
+                          rest)] ; the correct indices for the non-header fields
+             (matrix-row idx))]]]))
 
 (defn dashboard-page []
-  [:div
-   [:div.row
-    [:div.col-sm-12
-     [:h1 "Labs Billability Dashboard"]]]
+  (let [billing-matrix (reaction (:calculated-billing-matrix @app-db))
+        csv-billing-matrix (reaction (vec2csv @billing-matrix))
+        csv-billing-matrix-filename (reaction (str "labs-billability_" (:from @app-db) "__" (:to @app-db) ".csv"))]
+    (fn []
+      [:div
+       [:div.row
+        [:div.col-sm-12
+         [:h1 "Labs Billability Dashboard"]]]
 
-   [:hr]
+       [:hr]
 
-   [:div.row
-    [:div.col-sm-4
-     [:p
-      [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 1)]
-                                          (swap! timespan assoc :from from)
-                                          (swap! timespan assoc :to to))} "Last Month"]]
-     [:p
-      [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 3)]
-                                          (swap! timespan assoc :from from)
-                                          (swap! timespan assoc :to to))} "Last 3 Months"]]
-     [:p
-      [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 6)]
-                                          (swap! timespan assoc :from fro)                                          (swap! timespan assoc :to to))} "Last 6 Months"]]]
+       [:div.row
+        [:div.col-sm-4
+         [:p
+          [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 1)]
+                                              (swap! app-db assoc :from from)
+                                              (swap! app-db assoc :to to))} "Last Month"]]
+         [:p
+          [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 3)]
+                                              (swap! app-db assoc :from from)
+                                              (swap! app-db assoc :to to))} "Last 3 Months"]]
+         [:p
+          [:div.btn.btn-default {:on-click #(let [[from to] (last-n-months 6)]
+                                              (swap! app-db assoc :from from)
+                                              (swap! app-db assoc :to to))} "Last 6 Months"]]]
 
-    [:div.col-sm-4.text-right
-     [:p
-      "From: " [:input {:type "text"
-                        :value (:from @timespan)
-                        :on-change #(swap! timespan assoc :from (-> % .-target .-value))}]]
-     [:p
-      "To: " [:input {:type "text"
-                      :value (:to @timespan)
-                      :on-change #(swap! timespan assoc :to (-> % .-target .-value))}]]]
+        [:div.col-sm-4.text-right
+         [:p
+          "From: " [:input {:type "text"
+                            :value (:from @app-db)
+                            :on-change #(swap! app-db assoc :from (-> % .-target .-value))}]]
+         [:p
+          "To: " [:input {:type "text"
+                          :value (:to @app-db)
+                          :on-change #(swap! app-db assoc :to (-> % .-target .-value))}]]]
 
-    [:div.col-sm-4.text-right
-     [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @timespan))
-                                                         (verify-is-date (:to @timespan)))
-                                                (new-database (:from @timespan) (:to @timespan)))} "Make it so" ]
-     [:hr]
-     [:a {:href (vec2csv @calculated-billing-matrix) :download (str "labs-billability_" (:from @timespan) "__" (:to @timespan) ".csv")}
-      [:div.btn-primary.btn  "Download as CSV" ]]
-     ]]
+        [:div.col-sm-4.text-right
+         [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @app-db))
+                                                             (verify-is-date (:to @app-db)))
+                                                    (do
+                                                      (swap! app-db assoc :loading? true)
+                                                      (new-database (:from @app-db) (:to @app-db))))} "Make it so" ]
+         [:hr]
+         [:a {:href @csv-billing-matrix :download @csv-billing-matrix-filename}
+          [:div.btn-primary.btn  "Download as CSV" ]]]]
 
-   [:hr]
+       [:hr]
 
-   [:div.row
-    [:div.col-sm-12
-     [dashboard-table]]
-    [:h3.text-right {:style {:color "gray"}}  (:last-fetch @timespan)]]
-])
+       (if (:loading? @app-db)
+         [:h3 "Loading..."]
+         [:div.row
+          [:div.col-sm-12
+           [dashboard-table @billing-matrix]]
+          [:h3.text-right {:style {:color "gray"}}  (:last-fetch @app-db)]])])))
 
 
 ;; -------------------------

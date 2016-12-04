@@ -23,6 +23,7 @@
                  [cljs-http "0.1.42"]
                  [com.andrewmcveigh/cljs-time "0.4.0"]
                  [testdouble/clojurescript.csv "0.2.0"]
+                 [re-frame "0.8.0"]
                  ]
 
   :plugins [[lein-environ "1.0.2"]
