@@ -32,8 +32,6 @@
 
 (enable-console-print!)
 
-(declare calculate-billing-matrix )
-
 
 ;;------- time stuff
 (def date-formatter (tf/formatters :year-month-day))
@@ -49,9 +47,8 @@
                 :UserID {:db/valueType :db.type/ref}
                 :person/userid {:db/unique :db.unique/identity}})
 
-(defonce conn (d/create-conn db-schema ))
-
-(defonce initial-state {:from (first (last-n-months 1))
+(defonce initial-state {:conn (d/create-conn db-schema )
+                        :from (first (last-n-months 1))
                         :to (second (last-n-months 1))
                         :last-fetch nil
                         :calculated-billing-matrix nil
@@ -103,7 +100,7 @@
               "&UserIDs=[" (apply str (interpose \,  userids*)) "]")
          (http/jsonp))))
 
-(defn transact-time-entries! [db start end userids]
+(defn transact-time-entries! [conn start end userids]
   (prn "Getting time entries from" start "to" end)
   (take! (<time-entry start end userids) (fn [response]
                                            (prn (:status response))
@@ -113,13 +110,13 @@
                                                (->> response
                                                     :body
                                                     :Entries
-                                                    (d/transact! db))
+                                                    (d/transact! conn))
                                                (prn "received" (count (-> response :body :Entries)) "records")
                                                (dispatch [:update-last-fetch])
                                                (dispatch [:calculate-billing-matrix])
                                                (dispatch [:loading? false]))))))
 
-(defn get-labster-time-entries [start end]
+(defn get-labster-time-entries [conn start end]
   (transact-time-entries! conn start end labster-ids))
 
 
@@ -141,10 +138,11 @@
                       :person/userid (second l)}])))
 
 
-(defn new-database [start end]
+(defn new-database [conn start end]
   (d/reset-conn! conn (d/empty-db db-schema))
   (transact-users! conn +labsters+ )
-  (get-labster-time-entries start end))
+  (get-labster-time-entries conn start end)
+  conn)
 
 (defn format-hours [hrs]
   (cond
@@ -154,14 +152,10 @@
 
 
 ;;-------- GO GO GO
-(when (= @conn (d/empty-db db-schema))
-  (let [[from to] (last-n-months 1)]
-    (new-database from to)))
-
 
 ;;---- QUERIES
 
-(defn time-spent-on-projs [name]
+(defn time-spent-on-projs [db name]
   (d/q '[:find ?p (sum ?duration) .
          :in $ ?name
          :with ?p
@@ -173,10 +167,10 @@
          [?p :Duration ?d]
          [(/ ?d 60) ?duration]
          ]
-       @conn
+       db
        name))
 
-(defn time-spent-on-projid [projid uid]
+(defn time-spent-on-projid [db projid uid]
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid ?projid
@@ -187,12 +181,12 @@
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
           ]
-        @conn
+        db
         uid
         projid)
    0))
 
-(defn time-spent-not-billable [uid]
+(defn time-spent-not-billable [db uid]
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid
@@ -212,11 +206,11 @@
           [(not= ?pid 23404)]
           [(not= ?pid 22295)]
           ]
-        @conn
+        db
         uid)
    0))
 
-(defn time-spent-on-billable-projects [uid]
+(defn time-spent-on-billable-projects [db uid]
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid
@@ -234,12 +228,12 @@
           [(not= ?pid 23404)]
           [(not= ?pid 22295)]
           ]
-        @conn
+        db
         uid)
    0))
 
 
-(defn total-time-booked [uid]
+(defn total-time-booked [db uid]
   (or
    (d/q '[:find (sum ?duration) .
           :in $ ?uid
@@ -249,16 +243,16 @@
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
           ]
-        @conn
+        db
         uid)
    0))
 
 
 ;; Duration by project
-(defn q [query]
+(defn q [db query]
   (prn
    (d/q query
-        @conn
+       db
         )))
 
 
@@ -284,18 +278,18 @@
 
 (defn calculate-billing-matrix
   ""
-  []
+  [db lab-projects labster-ids labster-names]
   (let [
-        labster-time-spent-on (fn [proj-name]
-                                (map (partial time-spent-on-projid (get +lab-projects+ proj-name)) labster-ids))
-        labs-billable (labster-time-spent-on "Labs Billable")
-        others-billable (map (partial time-spent-on-billable-projects) labster-ids)
-        others-unbillable (map (partial time-spent-not-billable) labster-ids)
-        administration (labster-time-spent-on "Administration")
-        experiments (labster-time-spent-on "Experiments")
-        studies (labster-time-spent-on "Studies")
-        promo (labster-time-spent-on  "Promo")
-        personal-sum (map total-time-booked labster-ids)
+        labster-time-spent-on (fn [db proj-name]
+                                (map (partial time-spent-on-projid db (get lab-projects proj-name)) labster-ids))
+        labs-billable (labster-time-spent-on db "Labs Billable")
+        others-billable (map (partial time-spent-on-billable-projects db) labster-ids)
+        others-unbillable (map (partial time-spent-not-billable db) labster-ids)
+        administration (labster-time-spent-on db "Administration")
+        experiments (labster-time-spent-on db "Experiments")
+        studies (labster-time-spent-on db "Studies")
+        promo (labster-time-spent-on db "Promo")
+        personal-sum (map (partial total-time-booked db) labster-ids)
         sum (partial reduce +)
         sum-all (reduce + personal-sum)
         percentall #(str (.toFixed (/ (* 100 (sum %)) sum-all) 2) \%)
@@ -316,7 +310,10 @@
 ;; -- Event Handlers ----------------------------------------------------------
 (reg-event-db :initialize
               (fn [db _]
-                (merge db initial-state)))
+                (let [[from to] (last-n-months 1)
+                      initial-db (merge db initial-state)]
+                  (dispatch [:new-database])
+                  initial-db)))
 
 
 (reg-event-db :loading?
@@ -335,7 +332,15 @@
 
 (reg-event-db :calculate-billing-matrix
               (fn [db _]
-                (assoc db :calculated-billing-matrix (calculate-billing-matrix))))
+                (assoc db :calculated-billing-matrix (calculate-billing-matrix @(:conn db) +lab-projects+ labster-ids labster-names))))
+
+(reg-event-db :new-database
+              (fn [db _]
+                (let [conn (:conn db)
+                      from (:from db)
+                      to (:to db)]
+                  (new-database conn from to)
+                  db)))
 
 
 
@@ -424,7 +429,8 @@
                                                              (verify-is-date (:to @from-to)))
                                                     (do
                                                       (dispatch [:loading? true])
-                                                      (new-database (:from @from-to) (:to @from-to))))} "Make it so" ]
+                                                      (dispatch [:new-database])
+                                                      ))} "Make it so" ]
          [:hr]
          [:a {:href @csv-billing-matrix :download @csv-billing-matrix-filename}
           [:div.btn-primary.btn  "Download as CSV" ]]]]
