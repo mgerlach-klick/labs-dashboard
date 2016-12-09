@@ -24,6 +24,8 @@
                  [com.andrewmcveigh/cljs-time "0.4.0"]
                  [testdouble/clojurescript.csv "0.2.0"]
                  [re-frame "0.8.0"]
+                 [binaryage/devtools "0.8.3"]
+
                  ]
 
   :plugins [[lein-environ "1.0.2"]
@@ -64,6 +66,7 @@
             {:source-paths ["src/cljs" "src/cljc" "env/dev/cljs"]
              :compiler
              {:main "dashboard.dev"
+              :preloads [devtools.preload ]
               :asset-path "/js/out"
               :output-to "target/cljsbuild/public/js/app.js"
               :output-dir "target/cljsbuild/public/js/out"

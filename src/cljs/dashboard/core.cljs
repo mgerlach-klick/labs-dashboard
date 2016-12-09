@@ -143,6 +143,14 @@
   (transact-users! conn +labsters+ )
   (get-labster-time-entries conn start end)
   conn)
+(defn format-hours-pct [[hrs total]]
+          (zero? hrs) "-"
+  (let [hours (cond
+                (number? hrs) (.toFixed hrs 2)
+                (string? hrs) hrs)
+        percentage (* 100 (/ hrs total))
+        percentage-str (.toFixed percentage 0)]
+    (str hours " (" percentage-str "%)")))
 
 (defn format-hours [hrs]
   (cond
@@ -368,8 +376,32 @@
 
 ; -- Components
 
+(defn dashboard-percentage-table [matrix]
+  (let [totals (->> matrix last rest ) ; last row of matrix without header and '100%' is sums. Partition them up
+        matrix-row #(let [r (get matrix %)]
+                      (vector :tr
+                              (vector :th (first r))
+                              (map (comp (partial vector :td)
+                                         (partial format-hours-pct))
+                                   (map vector
+                                        (rest (butlast r))
+                                        totals))
+                              (vector :td (last r))))]
+    [:div.row
+     [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
+      [:thead
+       [:tr ; names
+        (map (partial vector :th) (get matrix 0))]]
+
+      [:tbody
+       (for [idx (->> matrix
+                      count
+                      range
+                      rest)] ; the correct indices for the non-header fields
+         (matrix-row idx))]]]))
 
 (defn dashboard-table [matrix]
+  (prn 'matrix (type matrix))
   (let [matrix-row #(let [r (get matrix %)]
                       (vector :tr
                               (vector :th (first r))
@@ -407,19 +439,20 @@
 
        [:div.row
         [:div.col-sm-4
-         [:p
+         [:div.row
           [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 1)])} "Last Month"]]
-         [:p
+         [:div.row
           [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 3)])} "Last 3 Months"]]
-         [:p
+         [:div.row
           [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 6)])} "Last 6 Months"]]]
 
         [:div.col-sm-4.text-right
-         [:p
+         [:div.row
           "From: " [:input {:type "text"
                             :value (:from @from-to)
                             :on-change #(dispatch [:set-from-to [(-> % .-target .-value) (:to @from-to)]])}]]
-         [:p
+         [:div.row
+
           "To: " [:input {:type "text"
                           :value (:to @from-to)
                           :on-change #(dispatch [:set-from-to [(:from @from-to) (-> % .-target .-value)]])}]]]
@@ -441,7 +474,7 @@
          [:h3 "Loading..."]
          [:div.row
           [:div.col-sm-12
-           [dashboard-table @billing-matrix]]
+           [dashboard-percentage-table @billing-matrix]]
           [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
 
 
@@ -449,8 +482,10 @@
 ;; Initialize app
 
 (defn mount-root [root-element]
-  (dispatch [:initialize])
-  (reagent/render [root-element] (.getElementById js/document "app")))
+  (when (empty? @re-frame.db/app-db)
+    (prn "Database empty. Initializing")
+    (dispatch [:initialize])
+    (reagent/render [root-element] (.getElementById js/document "app"))))
 
 (defn init! []
   (mount-root #'dashboard-page))
