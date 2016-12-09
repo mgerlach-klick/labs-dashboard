@@ -52,6 +52,7 @@
                         :to (second (last-n-months 1))
                         :last-fetch nil
                         :calculated-billing-matrix nil
+                        :show-percentages? false
                         :loading? true})
 
 
@@ -143,14 +144,15 @@
   (transact-users! conn +labsters+ )
   (get-labster-time-entries conn start end)
   conn)
+
 (defn format-hours-pct [[hrs total]]
-          (zero? hrs) "-"
-  (let [hours (cond
-                (number? hrs) (.toFixed hrs 2)
-                (string? hrs) hrs)
-        percentage (* 100 (/ hrs total))
-        percentage-str (.toFixed percentage 0)]
-    (str hours " (" percentage-str "%)")))
+  (if  (zero? hrs) "-"
+       (let [hours (cond
+                     (number? hrs) (.toFixed hrs 2)
+                     (string? hrs) hrs)
+             percentage (* 100 (/ hrs total))
+             percentage-str (.toFixed percentage 0)]
+         (str hours " (" percentage-str "%)"))))
 
 (defn format-hours [hrs]
   (cond
@@ -328,6 +330,11 @@
               (fn [db [_ yesno]]
                 (assoc db :loading? yesno)))
 
+(reg-event-db :show-percentages?
+              (fn [db _]
+                (update db :show-percentages? not)))
+
+
 (reg-event-db :set-from-to
               (fn [db [_ [from to]]]
                 (assoc db
@@ -372,13 +379,17 @@
          (fn [db _]
            (:loading? db)))
 
+(reg-sub :show-percentages?
+         (fn [db _]
+           (:show-percentages? db)))
+
 
 
 ; -- Components
 
 (defn dashboard-percentage-table [matrix]
   (let [totals (->> matrix last rest ) ; last row of matrix without header and '100%' is sums. Partition them up
-        matrix-row #(let [r (get matrix %)]
+        pctg-matrix-row #(let [r (get matrix %)]
                       (vector :tr
                               (vector :th (first r))
                               (map (comp (partial vector :td)
@@ -386,6 +397,13 @@
                                    (map vector
                                         (rest (butlast r))
                                         totals))
+                              (vector :td (last r))))
+        matrix-row #(let [r (get matrix %)]
+                      (vector :tr
+                              (vector :th (first r))
+                              (map (comp (partial vector :td)
+                                         (partial format-hours))
+                                   (rest (butlast r)))
                               (vector :td (last r))))]
     [:div.row
      [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
@@ -397,8 +415,10 @@
        (for [idx (->> matrix
                       count
                       range
-                      rest)] ; the correct indices for the non-header fields
-         (matrix-row idx))]]]))
+                      rest
+                      (drop 1))] ; the correct indices for the non-header fields
+         (pctg-matrix-row idx))
+       (matrix-row (->> matrix count range last ))]]]))
 
 (defn dashboard-table [matrix]
   (prn 'matrix (type matrix))
@@ -427,6 +447,7 @@
         from-to (subscribe [:from-to])
         last-fetch (subscribe [:last-fetch])
         loading? (subscribe [:loading?])
+        show-percentages? (subscribe [:show-percentages?])
         csv-billing-matrix (reaction (vec2csv @billing-matrix))
         csv-billing-matrix-filename (reaction (str "labs-billability_" (:from @from-to) "__" (:to @from-to) ".csv"))]
     (fn []
@@ -455,7 +476,11 @@
 
           "To: " [:input {:type "text"
                           :value (:to @from-to)
-                          :on-change #(dispatch [:set-from-to [(:from @from-to) (-> % .-target .-value)]])}]]]
+                          :on-change #(dispatch [:set-from-to [(:from @from-to) (-> % .-target .-value)]])}]]
+         [:div.row
+          "Include percentages: " [:input {:type :checkbox
+                                       :value @show-percentages?
+                                       :on-change #(dispatch [:show-percentages?])}]]]
 
         [:div.col-sm-4.text-right
          [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @from-to))
@@ -474,7 +499,9 @@
          [:h3 "Loading..."]
          [:div.row
           [:div.col-sm-12
-           [dashboard-percentage-table @billing-matrix]]
+           (if @show-percentages?
+             [dashboard-percentage-table @billing-matrix]
+             [dashboard-table @billing-matrix])]
           [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
 
 
@@ -484,8 +511,8 @@
 (defn mount-root [root-element]
   (when (empty? @re-frame.db/app-db)
     (prn "Database empty. Initializing")
-    (dispatch [:initialize])
-    (reagent/render [root-element] (.getElementById js/document "app"))))
+    (dispatch [:initialize]))
+  (reagent/render [root-element] (.getElementById js/document "app")))
 
 (defn init! []
   (mount-root #'dashboard-page))
