@@ -416,7 +416,7 @@
                       count
                       range
                       rest
-                      (drop 1))] ; the correct indices for the non-header fields
+                      butlast)] ; the correct indices for the non-header fields
          (pctg-matrix-row idx))
        (matrix-row (->> matrix count range last ))]]]))
 
