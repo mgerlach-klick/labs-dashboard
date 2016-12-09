@@ -61,19 +61,18 @@
 
 
 ;; ----- hardcoded data
-(def +labsters+ [
-                 ["Yan" 5959]
-                 ["Carolyn" 5123]
-                 ["Andrew" 6157]
-                 ["Ken" 4803]
-                 ["Ani" 6308]
-                 ["Max"  4966]
-                 ["Kat" 5904]
-                 ["Pete" 5466]
-                 ["Stephen" 5417]
-                 ])
-(def labster-names (map first +labsters+))
-(def labster-ids (map second +labsters+))
+(def +labsters+ (sorted-map
+                 "Yan" 5959
+                 "Carolyn" 5123
+                 "Andrew" 6157
+                 "Ken" 4803
+                 "Ani" 6308
+                 "Max"  4966
+                 "Kat" 5904
+                 "Pete" 5466
+                 "Stephen" 5417))
+(def labster-names (keys +labsters+))
+(def labster-ids (map #(get +labsters+ %) labster-names))
 
 (def +lab-projects+ {"Labs Billable" 23409
                      "Administration"  16897
@@ -141,7 +140,7 @@
 
 (defn new-database [conn start end]
   (d/reset-conn! conn (d/empty-db db-schema))
-  (transact-users! conn +labsters+ )
+  (transact-users! conn (seq +labsters+) )
   (get-labster-time-entries conn start end)
   conn)
 
@@ -387,11 +386,15 @@
 
 ; -- Components
 
-(defn dashboard-percentage-table [matrix]
+(defn dashboard-percentage-table [matrix date]
   (let [totals (->> matrix last rest ) ; last row of matrix without header and '100%' is sums. Partition them up
         pctg-matrix-row #(let [r (get matrix %)]
                       (vector :tr
-                              (vector :th (first r))
+                              (if-let [projid (get +lab-projects+ (first r))]
+                                (vector :th {:on-click (fn []
+                                                         (js/window.open
+                                                          (str "https://genome.klick.com/tasks/project/home/" projid)))}(first r))
+                                (vector :th (first r)))
                               (map (comp (partial vector :td)
                                          (partial format-hours-pct))
                                    (map vector
@@ -409,7 +412,13 @@
      [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
       [:thead
        [:tr ; names
-        (map (partial vector :th) (get matrix 0))]]
+        (map (fn [name]
+               (if-let [uid (get +labsters+ name)]
+                 (vector :th {:on-click (fn []
+                                          (js/window.open
+                                           (str "https://genome.klick.com/scheduler/#/week/" date "/" uid)))} name)
+                 (vector :th name)))
+             (get matrix 0))]]
 
       [:tbody
        (for [idx (->> matrix
@@ -420,11 +429,15 @@
          (pctg-matrix-row idx))
        (matrix-row (->> matrix count range last ))]]]))
 
-(defn dashboard-table [matrix]
+(defn dashboard-table [matrix date]
   (prn 'matrix (type matrix))
   (let [matrix-row #(let [r (get matrix %)]
                       (vector :tr
-                              (vector :th (first r))
+                              (if-let [projid (get +lab-projects+ (first r))]
+                                (vector :th {:on-click (fn []
+                                                         (js/window.open
+                                                          (str "https://genome.klick.com/tasks/project/home/" projid)))}(first r))
+                                (vector :th (first r)))
                               (map (comp (partial vector :td)
                                          (partial format-hours))
                                    (rest (butlast r)))
@@ -433,7 +446,13 @@
          [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
           [:thead
            [:tr ; names
-            (map (partial vector :th) (get matrix 0))]]
+            (map (fn [name]
+                   (if-let [uid (get +labsters+ name)]
+                     (vector :th {:on-click (fn []
+                                              (js/window.open
+                                               (str "https://genome.klick.com/scheduler/#/week/" date "/" uid)))} name)
+                     (vector :th name)))
+                 (get matrix 0))]]
 
           [:tbody
            (for [idx (->> matrix
@@ -500,8 +519,8 @@
          [:div.row
           [:div.col-sm-12
            (if @show-percentages?
-             [dashboard-percentage-table @billing-matrix]
-             [dashboard-table @billing-matrix])]
+             [dashboard-percentage-table @billing-matrix (:to @from-to)]
+             [dashboard-table @billing-matrix (:to @from-to)])]
           [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
 
 
