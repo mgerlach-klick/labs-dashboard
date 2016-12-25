@@ -416,7 +416,7 @@
                (if-let [uid (get +labsters+ name)]
                  (vector :th {:on-click (fn []
                                           (js/window.open
-                                           (str "https://genome.klick.com/scheduler/#/week/" date "/" uid)))} name)
+                                           (str "https://genome.klick.com/scheduler/#/week/" date "/user/" uid)))} name)
                  (vector :th name)))
              (get matrix 0))]]
 
@@ -450,7 +450,7 @@
                    (if-let [uid (get +labsters+ name)]
                      (vector :th {:on-click (fn []
                                               (js/window.open
-                                               (str "https://genome.klick.com/scheduler/#/week/" date "/" uid)))} name)
+                                               (str "https://genome.klick.com/scheduler/#/week/" date "/user/" uid)))} name)
                      (vector :th name)))
                  (get matrix 0))]]
 
