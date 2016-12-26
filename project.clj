@@ -45,7 +45,7 @@
    [:cljsbuild :builds :app :compiler :output-dir]
    [:cljsbuild :builds :app :compiler :output-to]]
 
-  :source-paths ["src/clj" "src/cljc"]
+  :source-paths ["src/clj" "src/cljc" "test/clj"]
   :resource-paths ["resources" "target/cljsbuild"]
 
   :minify-assets
@@ -61,18 +61,16 @@
               :optimizations :advanced
               :pretty-print  false}}
             :app
-            {:source-paths ["src/cljs" "src/cljc" "env/dev/cljs"]
+            {:source-paths ["src/cljs" "src/cljc" "env/dev/cljs" "test/cljs"]
              :compiler
              {:main "dashboard.dev"
+              :preloads [devtools.preload ]
               :asset-path "/js/out"
               :output-to "target/cljsbuild/public/js/app.js"
               :output-dir "target/cljsbuild/public/js/out"
               :source-map true
               :optimizations :none
-              :pretty-print  true}}
-
-
-
+              :pretty-print true}}
             }
    }
 
