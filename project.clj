@@ -24,9 +24,12 @@
                  [com.andrewmcveigh/cljs-time "0.4.0"]
                  [testdouble/clojurescript.csv "0.2.0"]
                  [re-frame "0.8.0"]
+                 [binaryage/devtools "0.8.3"]
+
                  ]
 
   :plugins [[lein-environ "1.0.2"]
+            [lein-pprint "1.1.2"]
             [lein-cljsbuild "1.1.1"]
             [lein-asset-minifier "0.2.7"
              :exclusions [org.clojure/clojure]]]
@@ -79,9 +82,10 @@
   {:http-server-root "public"
    :server-port 3449
    :nrepl-port 7002
-   :nrepl-middleware ["cemerick.piggieback/wrap-cljs-repl"
-                      "cider.nrepl/cider-middleware"
-                      "refactor-nrepl.middleware/wrap-refactor"
+   :nrepl-middleware [
+                      "cemerick.piggieback/wrap-cljs-repl"
+                      ;; "cider.nrepl/cider-middleware"
+                      ;; "refactor-nrepl.middleware/wrap-refactor"
                       ]
    :css-dirs ["resources/public/css"]
    :ring-handler dashboard.handler/app}
@@ -89,7 +93,8 @@
 
 
   :profiles {:dev {:repl-options {:init-ns dashboard.repl
-                                  :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
+                                  :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]
+                                  }
 
                    :dependencies [[ring/ring-mock "0.3.0"]
                                   [ring/ring-devel "1.5.0"]
@@ -102,11 +107,8 @@
 
                    :source-paths ["env/dev/clj"]
                    :plugins [[lein-figwheel "0.5.8"]
-                             [cider/cider-nrepl "0.10.0-SNAPSHOT"]
                              [org.clojure/tools.namespace "0.3.0-alpha2"
                               :exclusions [org.clojure/tools.reader]]
-                             [refactor-nrepl "2.0.0-SNAPSHOT"
-                              :exclusions [org.clojure/clojure]]
                              ]
 
                    :injections [(require 'pjstadig.humane-test-output)
