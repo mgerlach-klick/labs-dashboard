@@ -24,7 +24,6 @@
 ;;; - Fill out last week's schedule, export it, and use it to write tests
 ;;; - Maybe factor some stuff out into own modules
 ;;; - try to factor out "not-labs-project" rule
-;;; - click to go to labster schedule / project page
 
 
 
@@ -195,10 +194,19 @@
         projid)
    0))
 
+(def ds-rules '[[(not-labs-project? ?p)
+                 [?p :ProjectID ?pid]
+                 [(not= ?pid 23409)]
+                 [(not= ?pid 16897)]
+                 [(not= ?pid 23405)]
+                 [(not= ?pid 23404)]
+                 [(not= ?pid 22295)]
+                ]])
+
 (defn time-spent-not-billable [db uid]
   (or
    (d/q '[:find (sum ?duration) .
-          :in $ ?uid
+          :in $ % ?uid
           :with ?p
           :where
           [?p :UserID ?uid]
@@ -209,35 +217,28 @@
           ;; +labs-projects+
           [(get-else $ ?e :IsClientBillable false)]
           ;; [(= :nil ?nobill)]
-          [(not= ?pid 23409)]
-          [(not= ?pid 16897)]
-          [(not= ?pid 23405)]
-          [(not= ?pid 23404)]
-          [(not= ?pid 22295)]
+          (not-labs-project? ?p)
           ]
         db
+        ds-rules
         uid)
    0))
 
 (defn time-spent-on-billable-projects [db uid]
   (or
    (d/q '[:find (sum ?duration) .
-          :in $ ?uid
+          :in $ % ?uid
           :with ?p
           :where
           [?p :UserID ?uid]
           [?p :ProjectID ?pid]
           [?p :IsClientBillable true]
+          (not-labs-project? ?p)
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
-          ;; +labs-projects+
-          [(not= ?pid 23409)]
-          [(not= ?pid 16897)]
-          [(not= ?pid 23405)]
-          [(not= ?pid 23404)]
-          [(not= ?pid 22295)]
           ]
         db
+        ds-rules
         uid)
    0))
 
