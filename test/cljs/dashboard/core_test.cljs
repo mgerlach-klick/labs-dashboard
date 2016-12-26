@@ -126,4 +126,6 @@
         :dashboard.core/experiments "81.82%"})))
 
 
-(dc/calculate-all @test-db dc/+dashboard-pages+ dc/+labsters+)
+(dc/ffind
+ (dc/calculate-all @test-db dc/+dashboard-pages+ dc/+labsters+)
+ :display-name "SUM")

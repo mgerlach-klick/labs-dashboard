@@ -145,7 +145,7 @@
             "TicketTitle": "Yan test experiments",
             "UserID": 5959,
             "Duration": 135,
-            "Approved": true,
+            "Approved": true
         },
         {
             "Type": "Project",

@@ -13,7 +13,7 @@
                  [compojure "1.5.1"]
                  [hiccup "1.0.5"]
                  [yogthos/config "0.8"]
-                 [org.clojure/clojurescript "1.9.229" :scope "provided"]
+                 [org.clojure/clojurescript "1.9.293" :scope "provided"]
                  [secretary "1.2.3"]
                  [venantius/accountant "0.1.7" :exclusions [org.clojure/tools.reader]]
 
@@ -48,7 +48,7 @@
    [:cljsbuild :builds :app :compiler :output-dir]
    [:cljsbuild :builds :app :compiler :output-to]]
 
-  :source-paths ["src/clj" "src/cljc" "test/clj"]
+  :source-paths ["src/clj" "src/cljc" ]
   :resource-paths ["resources" "target/cljsbuild"]
 
   :minify-assets
@@ -84,13 +84,14 @@
    :nrepl-port 7002
    :nrepl-middleware [
                       "cemerick.piggieback/wrap-cljs-repl"
-                      ;; "cider.nrepl/cider-middleware"
-                      ;; "refactor-nrepl.middleware/wrap-refactor"
+                      "cider.nrepl/cider-middleware"
+                      "refactor-nrepl.middleware/wrap-refactor"
                       ]
    :css-dirs ["resources/public/css"]
    :ring-handler dashboard.handler/app}
 
 
+  :global-vars {*print-length* 20}
 
   :profiles {:dev {:repl-options {:init-ns dashboard.repl
                                   :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]

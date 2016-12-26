@@ -71,7 +71,7 @@
 (defn mk-person [name uid]
   {:display-name name
    :person/name name
-   :person/userid uid})
+   :person/id uid})
 
 
 (def +labsters+ [
