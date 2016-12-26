@@ -2,28 +2,36 @@
   (:require-macros [cljs.core.async.macros :refer [go]]
                    [reagent.ratom :refer [reaction]])
   (:require [reagent.core :as reagent :refer [atom]]
-              [cljs-http.client :as http]
-              [cljs.core.async :refer [<! put! take!]]
-              [datascript.core :as d]
-              [cljs.pprint :as pprint]
-              [goog.string :as gstring]
-              [goog.string.format]
-              [cljs-time.core :as t]
-              [cljs-time.format :as tf]
-              [testdouble.cljs.csv :as csv]
-              [re-frame.core :refer [reg-event-db
-                                     path
-                                     reg-sub
-                                     dispatch
-                                     dispatch-sync
-                                     subscribe]]
-              ))
+            [cljs-http.client :as http]
+            [cljs.core.async :refer [<! put! take!]]
+            [datascript.core :as d]
+            [cljs.pprint :as pprint]
+            [goog.string :as gstring]
+            [goog.string.format]
+            [cljs-time.core :as t]
+            [cljs-time.format :as tf]
+            [testdouble.cljs.csv :as csv]
+            [re-frame.core :refer [reg-event-db
+                                   path
+                                   reg-sub
+                                   dispatch
+                                   dispatch-sync
+                                   subscribe]
+             :as rf]
+
+
+            [dashboard.queries :refer [;time-spent-on-projs
+                                       time-spent-on-projid
+                                       time-spent-not-billable
+                                       time-spent-on-billable-projects
+                                       total-time-booked]]
+            ))
 
 
 ;;; TODO
-;;; - Fill out last week's schedule, export it, and use it to write tests
-;;; - Maybe factor some stuff out into own modules
-;;; - try to factor out "not-labs-project" rule
+;; - Maybe factor some stuff out into own modules
+;; Use datatable component:https://kishanov.github.io/re-frame-datatable/
+;; This means, end up with a column-based format, i.e. {:name "Max" :UserID 4966 :LabsBillable: 123 :Nonbillable nil}
 
 
 
@@ -60,31 +68,53 @@
 
 
 ;; ----- hardcoded data
-(def +labsters+ (sorted-map
-                 "Yan" 5959
-                 "Carolyn" 5123
-                 "Andrew" 6157
-                 "Ken" 4803
-                 "Ani" 6308
-                 "Max"  4966
-                 "Kat" 5904
-                 "Pete" 5466
-                 "Stephen" 5417))
-(def labster-names (keys +labsters+))
-(def labster-ids (map #(get +labsters+ %) labster-names))
-
-(def +lab-projects+ {"Labs Billable" 23409
-                     "Administration"  16897
-                     "Studies" 23405
-                     "Experiments" 23404
-                     "Promo" 22295})
-
-(def lab-project-ids (vals +lab-projects+))
+(defn mk-person [name uid]
+  {:display-name name
+   :person/name name
+   :person/userid uid})
 
 
+(def +labsters+ [
+                 (mk-person "Yan" 5959)
+                 (mk-person "Carolyn" 5123)
+                 (mk-person "Andrew" 6157)
+                 (mk-person "Ken" 4803)
+                 (mk-person "Ani" 6308)
+                 (mk-person "Max"  4966)
+                 (mk-person "Kat" 5904)
+                 (mk-person "Pete" 5466)
+                 (mk-person "Stephen" 5417)
+                 ])
+
+(defn all-user-ids [users]
+  (map :person/userid users))
+
+(defn all-user-names [users]
+  (map :person/name users))
+
+(def +lab-projects+ {:labs-billable 23409
+                     :admin  16897
+                     :studies 23405
+                     :experiments 23404
+                     :promo 22295})
+
+(defn ffind
+  "first object in s where a is v"
+  [s a v]
+  (first
+   (filter #(= (get % a) v) s)))
+
+(defn project-id-for-tag [tag]
+  (get +lab-projects+ tag))
 
 
-
+(defn project-id-for-name [name]
+  (let [names {"Labs Billable" :labs-billable
+               "Administration" :admin
+               "Experiments" :experiments
+               "Studies" :studies
+               "Promo" :promo}]
+    (project-id-for-tag (get names name))))
 
 
 
@@ -116,7 +146,7 @@
                                                (dispatch [:loading? false]))))))
 
 (defn get-labster-time-entries [conn start end]
-  (transact-time-entries! conn start end labster-ids))
+  (transact-time-entries! conn start end (all-user-ids +labsters+)))
 
 
 
@@ -132,14 +162,12 @@
 ;;----------- db stuff
 
 (defn transact-users! [db users]
-  (doseq [l users]
-    (d/transact! db [{:person/name (first l)
-                      :person/userid (second l)}])))
+  (d/transact! db users))
 
 
 (defn new-database [conn start end]
   (d/reset-conn! conn (d/empty-db db-schema))
-  (transact-users! conn (seq +labsters+) )
+  (transact-users! conn +labsters+ )
   (get-labster-time-entries conn start end)
   conn)
 
@@ -157,114 +185,6 @@
     (zero? hrs) "-"
     (number? hrs) (.toFixed hrs 2)
     (string? hrs) hrs))
-
-
-;;-------- GO GO GO
-
-;;---- QUERIES
-
-(defn time-spent-on-projs [db name]
-  (d/q '[:find ?p (sum ?duration) .
-         :in $ ?name
-         :with ?p
-         :where
-         [?l :person/name ?name]
-         [?l :person/userid ?id]
-         [?p :UserID ?id]
-         [?p :ProjectName ?proj]
-         [?p :Duration ?d]
-         [(/ ?d 60) ?duration]
-         ]
-       db
-       name))
-
-(defn time-spent-on-projid [db projid uid]
-  (or
-   (d/q '[:find (sum ?duration) .
-          :in $ ?uid ?projid
-          :with ?p
-          :where
-          [?p :UserID ?uid]
-          [?p :ProjectID ?projid]
-          [?p :Duration ?mins]
-          [(/ ?mins 60) ?duration]
-          ]
-        db
-        uid
-        projid)
-   0))
-
-(def ds-rules '[[(not-labs-project? ?p)
-                 [?p :ProjectID ?pid]
-                 [(not= ?pid 23409)]
-                 [(not= ?pid 16897)]
-                 [(not= ?pid 23405)]
-                 [(not= ?pid 23404)]
-                 [(not= ?pid 22295)]
-                ]])
-
-(defn time-spent-not-billable [db uid]
-  (or
-   (d/q '[:find (sum ?duration) .
-          :in $ % ?uid
-          :with ?p
-          :where
-          [?p :UserID ?uid]
-          [?p :IsClientBillable false]
-          [?p :Duration ?mins]
-          [?p :ProjectID ?pid]
-          [(/ ?mins 60) ?duration]
-          ;; +labs-projects+
-          [(get-else $ ?e :IsClientBillable false)]
-          ;; [(= :nil ?nobill)]
-          (not-labs-project? ?p)
-          ]
-        db
-        ds-rules
-        uid)
-   0))
-
-(defn time-spent-on-billable-projects [db uid]
-  (or
-   (d/q '[:find (sum ?duration) .
-          :in $ % ?uid
-          :with ?p
-          :where
-          [?p :UserID ?uid]
-          [?p :ProjectID ?pid]
-          [?p :IsClientBillable true]
-          (not-labs-project? ?p)
-          [?p :Duration ?mins]
-          [(/ ?mins 60) ?duration]
-          ]
-        db
-        ds-rules
-        uid)
-   0))
-
-
-(defn total-time-booked [db uid]
-  (or
-   (d/q '[:find (sum ?duration) .
-          :in $ ?uid
-          :with ?p
-          :where
-          [?p :UserID ?uid]
-          [?p :Duration ?mins]
-          [(/ ?mins 60) ?duration]
-          ]
-        db
-        uid)
-   0))
-
-
-;; Duration by project
-(defn q [db query]
-  (prn
-   (d/q query
-       db
-        )))
-
 
 
 ;; ----------- site helpers
@@ -286,35 +206,127 @@
 ;; Views
 
 
+(defn time-spent-on-tag [db tag uid]
+  (time-spent-on-projid db (project-id-for-tag tag) uid))
+
+(def +dashboard-pages+ {
+                        ::labs-billable {:display-name "Labs Billable"
+                                         :calculation (fn [db uid]
+                                                        (time-spent-on-tag db :labs-billable uid))}
+                        ::klick-billable {:display-name "Klick Billable"
+                                          :calculation (fn [db uid]
+                                                         (time-spent-on-billable-projects db uid))}
+                        ::non-billable {:display-name "Non-Billable"
+                                        :calculation (fn [db uid]
+                                                       (time-spent-not-billable db uid))}
+                        ::admin {:display-name "Administration"
+                                 :calculation (fn [db uid]
+                                                (time-spent-on-tag db :admin uid))}
+                        ::experiments {:display-name "Experiments"
+                                       :calculation (fn [db uid]
+                                                      (time-spent-on-tag db :experiments uid))}
+                        ::studies {:display-name "Studies"
+                                   :calculation (fn [db uid]
+                                                  (time-spent-on-tag db :studies uid))}
+                        ::promo {:display-name "Promotion"
+                                 :calculation (fn [db uid]
+                                                (time-spent-on-tag db :promo uid))}
+                        ::sum {:display-name "SUM"
+                               :calculation total-time-booked}
+                        })
+
+(defn add-section-items-to-user
+  "Calculates the values for all the items in the sections map for a user
+  and returns a new user map that has these values assoced into it"
+  [db sections user]
+  (reduce (fn [user [dashboard-key dashboard-item]]
+            (let [uid (:person/id user)
+                  display-name (:display-name dashboard-item)
+                  calc-fn (:calculation dashboard-item)
+                  value (calc-fn db uid)
+                  formatted-value (format-hours value)]
+              (assoc user dashboard-key {:display-name display-name
+                                         :value value
+                                         :formatted-value formatted-value})))
+          user
+          (seq sections)))
+
+
+(defn calculate-section-sums
+  "Calculates a total for all the keys in the sections map"
+  [sections users]
+  (into (hash-map)
+        (let [sum (partial reduce +)]
+          (for [k (keys sections)]
+            [k (sum (map #(get-in % [k :value]) users))]))))
+
+(defn calculate-user-percentages
+  "Calculates the percentages of all section items for a user based on a section-sum map"
+  [section-sums user]
+  (reduce (fn [user [section-key sum-all]]
+            (let [uval (get-in user [section-key :value])
+                  percentage (if (zero? uval) 0 (/ (* 100 uval) sum-all))
+                  formatted-percentage (if (zero? percentage) "-" (str (.toFixed percentage 0) \%))]
+              (-> user
+                  (assoc-in [section-key :percentage] percentage)
+                  (assoc-in [section-key :formatted-percentage] formatted-percentage))))
+          user
+          (seq section-sums)))
+
+(defn calculate-overall-percentages
+  "calculates percentages for section keys based on a section-sums map"
+  [section-sums]
+  (let [overall-sum (reduce + (vals section-sums))
+        percentage #(if (zero? %) 0 (/ (* 100 %) overall-sum))
+        formatted-percentage #(if (zero? (percentage %)) "-" (str (.toFixed (percentage %) 2) \%))]
+    (reduce (fn [m [k v]]
+              (assoc m k (formatted-percentage v)))
+            {}
+            section-sums)))
+
+(defn calculate-all
+  "Performs all the calculations and returns all the 'columns' of the table "
+  [db sections users]
+  (let [calc-users (map (partial add-section-items-to-user db sections) users)
+        section-sums (calculate-section-sums sections calc-users)
+        pct-users (map (partial calculate-user-percentages section-sums) calc-users)
+        overall-percentages (calculate-overall-percentages section-sums)]
+    (conj pct-users
+          (assoc section-sums
+                 :display-name "SUM")
+          (assoc overall-percentages
+                 :display-name "PCT"))))
+
+
 (defn calculate-billing-matrix
   ""
-  [db lab-projects labster-ids labster-names]
+  [db labster-ids labster-names]
   (let [
-        labster-time-spent-on (fn [db proj-name]
-                                (map (partial time-spent-on-projid db (get lab-projects proj-name)) labster-ids))
-        labs-billable (labster-time-spent-on db "Labs Billable")
+        labster-time-spent-on (fn [db proj-tag]
+                                (map (partial time-spent-on-projid db (project-id-for-tag proj-tag)) labster-ids))
+        labs-billable (labster-time-spent-on db ::labs-billable)
         others-billable (map (partial time-spent-on-billable-projects db) labster-ids)
         others-unbillable (map (partial time-spent-not-billable db) labster-ids)
-        administration (labster-time-spent-on db "Administration")
-        experiments (labster-time-spent-on db "Experiments")
-        studies (labster-time-spent-on db "Studies")
-        promo (labster-time-spent-on db "Promo")
+        administration (labster-time-spent-on db ::admin)
+        experiments (labster-time-spent-on db ::experiments)
+        studies (labster-time-spent-on db ::studies)
+        promo (labster-time-spent-on db ::promo)
         personal-sum (map (partial total-time-booked db) labster-ids)
         sum (partial reduce +)
         sum-all (reduce + personal-sum)
         percentall #(str (.toFixed (/ (* 100 (sum %)) sum-all) 2) \%)
         ]
-  `[
-    ["-" ~@labster-names "SUM" "PCT"]
-    ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~(percentall labs-billable)]
-    ["Klick Billable" ~@others-billable ~(sum others-billable) ~(percentall others-billable)]
-    ["Nonbillable" ~@others-unbillable ~(sum others-unbillable) ~(percentall others-unbillable)]
-    ["Administration" ~@administration ~(sum administration) ~(percentall administration)]
-    ["Experiments" ~@experiments ~(sum experiments) ~(percentall experiments)]
-    ["Studies" ~@studies ~(sum studies) ~(percentall studies)]
-    ["Promo" ~@promo ~(sum promo) ~(percentall promo)]
-    ["SUM" ~@personal-sum ~sum-all "100% (hopefully)" ]
-    ]))
+    `[
+      ["-" ~@labster-names "SUM" "PCT"]
+      ["Labs Billable" ~@labs-billable ~(sum labs-billable) ~(percentall labs-billable)]
+      ["Klick Billable" ~@others-billable ~(sum others-billable) ~(percentall others-billable)]
+      ["Nonbillable" ~@others-unbillable ~(sum others-unbillable) ~(percentall others-unbillable)]
+      ["Administration" ~@administration ~(sum administration) ~(percentall administration)]
+      ["Experiments" ~@experiments ~(sum experiments) ~(percentall experiments)]
+      ["Studies" ~@studies ~(sum studies) ~(percentall studies)]
+      ["Promo" ~@promo ~(sum promo) ~(percentall promo)]
+      ["SUM" ~@personal-sum ~sum-all "100% (hopefully)" ]
+      ]))
 
 
 ;; -- Event Handlers ----------------------------------------------------------
@@ -347,7 +359,7 @@
 
 (reg-event-db :calculate-billing-matrix
               (fn [db _]
-                (assoc db :calculated-billing-matrix (calculate-billing-matrix @(:conn db) +lab-projects+ labster-ids labster-names))))
+                (assoc db :calculated-billing-matrix (calculate-billing-matrix @(:conn db) (all-user-ids +labsters+) (all-user-names +labsters+)))))
 
 (reg-event-db :new-database
               (fn [db _]
@@ -369,7 +381,7 @@
 
 (reg-sub :billing-matrix
          (fn [db _]
-            (:calculated-billing-matrix db)))
+           (:calculated-billing-matrix db)))
 
 (reg-sub :last-fetch
          (fn [db _]
@@ -385,23 +397,23 @@
 
 
 
-; -- Components
+                                        ; -- Components
 
 (defn dashboard-percentage-table [matrix date]
   (let [totals (->> matrix last rest ) ; last row of matrix without header and '100%' is sums. Partition them up
         pctg-matrix-row #(let [r (get matrix %)]
-                      (vector :tr
-                              (if-let [projid (get +lab-projects+ (first r))]
-                                (vector :th {:on-click (fn []
-                                                         (js/window.open
-                                                          (str "https://genome.klick.com/tasks/project/home/" projid)))}(first r))
-                                (vector :th (first r)))
-                              (map (comp (partial vector :td)
-                                         (partial format-hours-pct))
-                                   (map vector
-                                        (rest (butlast r))
-                                        totals))
-                              (vector :td (last r))))
+                           (vector :tr
+                                   (if-let [projid (project-id-for-name (first r))]
+                                     (vector :th {:on-click (fn []
+                                                              (js/window.open
+                                                               (str "https://genome.klick.com/tasks/project/home/" projid)))}(first r))
+                                     (vector :th (first r)))
+                                   (map (comp (partial vector :td)
+                                              (partial format-hours-pct))
+                                        (map vector
+                                             (rest (butlast r))
+                                             totals))
+                                   (vector :td (last r))))
         matrix-row #(let [r (get matrix %)]
                       (vector :tr
                               (vector :th (first r))
@@ -434,7 +446,7 @@
   (prn 'matrix (type matrix))
   (let [matrix-row #(let [r (get matrix %)]
                       (vector :tr
-                              (if-let [projid (get +lab-projects+ (first r))]
+                              (if-let [projid (project-id-for-name (first r))]
                                 (vector :th {:on-click (fn []
                                                          (js/window.open
                                                           (str "https://genome.klick.com/tasks/project/home/" projid)))}(first r))
@@ -443,24 +455,24 @@
                                          (partial format-hours))
                                    (rest (butlast r)))
                               (vector :td (last r))))]
-        [:div.row
-         [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
-          [:thead
-           [:tr ; names
-            (map (fn [name]
-                   (if-let [uid (get +labsters+ name)]
-                     (vector :th {:on-click (fn []
-                                              (js/window.open
-                                               (str "https://genome.klick.com/scheduler/#/week/" date "/user/" uid)))} name)
-                     (vector :th name)))
-                 (get matrix 0))]]
+    [:div.row
+     [:table.table.table-hover.table-bordered ; {:class "table table-striped"}
+      [:thead
+       [:tr ; names
+        (map (fn [name]
+               (if-let [uid (get +labsters+ name)]
+                 (vector :th {:on-click (fn []
+                                          (js/window.open
+                                           (str "https://genome.klick.com/scheduler/#/week/" date "/user/" uid)))} name)
+                 (vector :th name)))
+             (get matrix 0))]]
 
-          [:tbody
-           (for [idx (->> matrix
-                          count
-                          range
-                          rest)] ; the correct indices for the non-header fields
-             (matrix-row idx))]]]))
+      [:tbody
+       (for [idx (->> matrix
+                      count
+                      range
+                      rest)] ; the correct indices for the non-header fields
+         (matrix-row idx))]]]))
 
 (defn dashboard-page []
   (let [billing-matrix (subscribe [:billing-matrix])
@@ -499,8 +511,8 @@
                           :on-change #(dispatch [:set-from-to [(:from @from-to) (-> % .-target .-value)]])}]]
          [:div.row
           "Include percentages: " [:input {:type :checkbox
-                                       :value @show-percentages?
-                                       :on-change #(dispatch [:show-percentages?])}]]]
+                                           :value @show-percentages?
+                                           :on-change #(dispatch [:show-percentages?])}]]]
 
         [:div.col-sm-4.text-right
          [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @from-to))
