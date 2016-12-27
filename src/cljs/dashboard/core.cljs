@@ -18,7 +18,7 @@
                                    dispatch-sync
                                    subscribe]
              :as rf]
-
+            [re-frame-datatable.core :as dt]
 
             [dashboard.queries :refer [;time-spent-on-projs
                                        time-spent-on-projid
@@ -68,22 +68,23 @@
 
 
 ;; ----- hardcoded data
-(defn mk-person [name uid]
+(defn mk-person [name uid idx]
   {:display-name name
    :person/name name
-   :person/id uid})
+   :person/userid uid
+   :display-index idx})
 
 
 (def +labsters+ [
-                 (mk-person "Yan" 5959)
-                 (mk-person "Carolyn" 5123)
-                 (mk-person "Andrew" 6157)
-                 (mk-person "Ken" 4803)
-                 (mk-person "Ani" 6308)
-                 (mk-person "Max"  4966)
-                 (mk-person "Kat" 5904)
-                 (mk-person "Pete" 5466)
-                 (mk-person "Stephen" 5417)
+                 (mk-person "Yan" 5959 15)
+                 (mk-person "Carolyn" 5123 8)
+                 (mk-person "Andrew" 6157 1)
+                 (mk-person "Ken" 4803 3)
+                 (mk-person "Ani" 6308 2)
+                 (mk-person "Max"  4966 4)
+                 (mk-person "Kat" 5904 5)
+                 (mk-person "Pete" 5466 6)
+                 (mk-person "Stephen" 5417 7)
                  ])
 
 (defn all-user-ids [users]
@@ -143,6 +144,7 @@
                                                (prn "received" (count (-> response :body :Entries)) "records")
                                                (dispatch [:update-last-fetch])
                                                (dispatch [:calculate-billing-matrix])
+                                               (dispatch [:calculate-data-table])
                                                (dispatch [:loading? false]))))))
 
 (defn get-labster-time-entries [conn start end]
@@ -240,7 +242,7 @@
   and returns a new user map that has these values assoced into it"
   [db sections user]
   (reduce (fn [user [dashboard-key dashboard-item]]
-            (let [uid (:person/id user)
+            (let [uid (:person/userid user)
                   display-name (:display-name dashboard-item)
                   calc-fn (:calculation dashboard-item)
                   value (calc-fn db uid)
@@ -257,14 +259,19 @@
   [sections users]
   (into (hash-map)
         (let [sum (partial reduce +)]
-          (for [k (keys sections)]
-            [k (sum (map #(get-in % [k :value]) users))]))))
+          (reduce (fn [m k]
+                    (let [summed-values (sum (map #(get-in % [k :value]) users))]
+                      (-> m
+                          (assoc-in [k :value] summed-values)
+                          (assoc-in [k :formatted-value] (format-hours summed-values)))
+                      )) {} (keys sections)))))
 
 (defn calculate-user-percentages
   "Calculates the percentages of all section items for a user based on a section-sum map"
   [section-sums user]
-  (reduce (fn [user [section-key sum-all]]
-            (let [uval (get-in user [section-key :value])
+  (reduce (fn [user [section-key section]]
+            (let [sum-all (get section :value)
+                  uval (get-in user [section-key :value])
                   percentage (if (zero? uval) 0 (/ (* 100 uval) sum-all))
                   formatted-percentage (if (zero? percentage) "-" (str (.toFixed percentage 0) \%))]
               (-> user
@@ -276,11 +283,15 @@
 (defn calculate-overall-percentages
   "calculates percentages for section keys based on a section-sums map"
   [section-sums]
-  (let [overall-sum (reduce + (vals section-sums))
+  (prn  (map :value (vals section-sums)))
+  (let [all-sums (map :value (vals section-sums))
+        overall-sum (reduce + all-sums)
         percentage #(if (zero? %) 0 (/ (* 100 %) overall-sum))
         formatted-percentage #(if (zero? (percentage %)) "-" (str (.toFixed (percentage %) 2) \%))]
     (reduce (fn [m [k v]]
-              (assoc m k (formatted-percentage v)))
+              (-> m
+                  (assoc-in [k :value] (percentage (:value v)))
+                  (assoc-in [k :formatted-value] (formatted-percentage (:value v)))))
             {}
             section-sums)))
 
@@ -293,9 +304,11 @@
         overall-percentages (calculate-overall-percentages section-sums)]
     (conj pct-users
           (assoc section-sums
-                 :display-name "SUM")
+                 :display-name "SUM"
+                 :display-index 99)
           (assoc overall-percentages
-                 :display-name "PCT"))))
+                 :display-name "PCT"
+                 :display-index 100))))
 
 
 (defn calculate-billing-matrix
@@ -361,6 +374,11 @@
               (fn [db _]
                 (assoc db :calculated-billing-matrix (calculate-billing-matrix @(:conn db) (all-user-ids +labsters+) (all-user-names +labsters+)))))
 
+
+(reg-event-db :calculate-data-table
+              (fn [db _]
+                (assoc db :data-table (calculate-all @(:conn db) +dashboard-pages+ +labsters+))))
+
 (reg-event-db :new-database
               (fn [db _]
                 (let [conn (:conn db)
@@ -382,6 +400,10 @@
 (reg-sub :billing-matrix
          (fn [db _]
            (:calculated-billing-matrix db)))
+
+(reg-sub :data-table
+         (fn [db _]
+           (:data-table db)))
 
 (reg-sub :last-fetch
          (fn [db _]
@@ -474,6 +496,32 @@
                       rest)] ; the correct indices for the non-header fields
          (matrix-row idx))]]]))
 
+
+(defn data-table
+  [subscriptions-vector
+   row-def-vec ;;contains ::row-key and ::row-label (str or key)
+   ]
+  (let [rows (subscribe subscriptions-vector)
+        sorted-rows (sort-by :display-index < @rows)
+        row-keys (map ::row-key row-def-vec )]
+    (fn []
+      [:table.ui.celled.striped.table
+       [:thead
+        [:tr
+         [:th "-"]
+         (for [row sorted-rows]
+           (conj [:th] (get row :display-name)))]]
+       [:tbody
+        (for [row-def row-def-vec]
+          [:tr
+           [:th (::row-label row-def)]
+           (for [person sorted-rows]
+             (do
+               (prn (get-in person [:display-name])
+                    (get-in person [(::row-key row-def) :formatted-value]))
+               [:td (get-in person [(::row-key row-def) :formatted-value])]))])]])))
+
+
 (defn dashboard-page []
   (let [billing-matrix (subscribe [:billing-matrix])
         from-to (subscribe [:from-to])
@@ -531,20 +579,28 @@
          [:h3 "Loading..."]
          [:div.row
           [:div.col-sm-12
-           (if @show-percentages?
-             [dashboard-percentage-table @billing-matrix (:to @from-to)]
-             [dashboard-table @billing-matrix (:to @from-to)])]
+           [data-table
+            [:data-table]
+            (vec (map (fn [[k v]]
+                        {::row-key k ::row-label (:display-name v)})
+                      (seq +dashboard-pages+)))
+            #_{::dt/table-classes ["ui" "celled" "stripped" "table"]}
+            ]
+           ;; (if @show-percentages?
+           ;;   [dashboard-percentage-table @billing-matrix (:to @from-to)]
+           ;;   [dashboard-table @billing-matrix (:to @from-to)])
+           ]
           [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
 
 
 ;; -------------------------
 ;; Initialize app
 
-(defn mount-root [root-element]
+(defn mount-root []
   (when (empty? @re-frame.db/app-db)
     (prn "Database empty. Initializing")
     (dispatch [:initialize]))
-  (reagent/render [root-element] (.getElementById js/document "app")))
+  (reagent/render [#'dashboard-page] (.getElementById js/document "app")))
 
 (defn init! []
-  (mount-root #'dashboard-page))
+  (mount-root))
