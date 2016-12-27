@@ -25,6 +25,7 @@
                  [testdouble/clojurescript.csv "0.2.0"]
                  [re-frame "0.8.0"]
                  [binaryage/devtools "0.8.3"]
+                 [re-frame-datatable "0.3.0"]
 
                  ]
 
@@ -84,8 +85,8 @@
    :nrepl-port 7002
    :nrepl-middleware [
                       "cemerick.piggieback/wrap-cljs-repl"
-                      "cider.nrepl/cider-middleware"
-                      "refactor-nrepl.middleware/wrap-refactor"
+                      ;; "cider.nrepl/cider-middleware"
+                      ;; "refactor-nrepl.middleware/wrap-refactor"
                       ]
    :css-dirs ["resources/public/css"]
    :ring-handler dashboard.handler/app}

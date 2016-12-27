@@ -46,7 +46,7 @@
    (=
     (dc/add-section-items-to-user @test-db
                                   dc/+dashboard-pages+
-                                  {:person/id 5959
+                                  {:person/userid 5959
                                    :person/name "Yan"})
     {:dashboard.core/klick-billable {:display-name "Klick Billable", :value 0, :formatted-value "-"},
      :dashboard.core/labs-billable {:display-name "Labs Billable", :value 0, :formatted-value "-"},
@@ -56,7 +56,7 @@
      :dashboard.core/non-billable {:display-name "Non-Billable", :value 0, :formatted-value "-"},
      :dashboard.core/studies {:display-name "Studies", :value 0, :formatted-value "-"},
      :dashboard.core/experiments {:display-name "Experiments", :value 2.25, :formatted-value "2.25"},
-     :person/id 5959}
+     :person/userid 5959}
     )))
 
 (deftest calculate-section-sums
@@ -70,7 +70,7 @@
                                                       :dashboard.core/non-billable {:display-name "Non-Billable", :value 0, :formatted-value "-"},
                                                       :dashboard.core/studies {:display-name "Studies", :value 0, :formatted-value "-"},
                                                       :dashboard.core/experiments {:display-name "Experiments", :value 2.25, :formatted-value "2.25"},
-                                                      :person/id 5959}
+                                                      :person/userid 5959}
                                                      {:dashboard.core/klick-billable {:display-name "Klick Billable", :value 0, :formatted-value "-"},
                                                       :dashboard.core/labs-billable {:display-name "Labs Billable", :value 0, :formatted-value "-"},
                                                       :dashboard.core/promo {:display-name "Promotion", :value 0, :formatted-value "-"},
@@ -79,7 +79,7 @@
                                                       :dashboard.core/non-billable {:display-name "Non-Billable", :value 0, :formatted-value "-"},
                                                       :dashboard.core/studies {:display-name "Studies", :value 0, :formatted-value "-"},
                                                       :dashboard.core/experiments {:display-name "Experiments", :value 2.25, :formatted-value "2.25"},
-                                                      :person/id 4966}
+                                                      :person/userid 4966}
                                                      ])
     {:dashboard.core/klick-billable 0,
      :dashboard.core/labs-billable 0,
@@ -100,13 +100,13 @@
                                     :dashboard.core/admin {:display-name "Administration", :value 1, :formatted-value "1"},
                                     :dashboard.core/experiments {:display-name "Experiments", :value 2.25, :formatted-value "2.25"},
                                     :person/name "Max",
-                                    :person/id 4966})
+                                    :person/userid 4966})
 
     {:dashboard.core/klick-billable {:display-name "Klick Billable", :value 0, :formatted-value "-", :percentage 0, :formatted-percentage "-"},
      :dashboard.core/admin {:display-name "Administration", :value 1, :formatted-value "1", :percentage 100, :formatted-percentage "100%"},
      :dashboard.core/experiments {:display-name "Experiments", :value 2.25, :formatted-value "2.25", :percentage 50, :formatted-percentage "50%"},
      :person/name "Max",
-     :person/id 4966})))
+     :person/userid 4966})))
 
 (deftest calculate-overall-percentages
   (is (=
