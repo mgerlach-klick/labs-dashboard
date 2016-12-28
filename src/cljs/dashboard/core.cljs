@@ -293,7 +293,7 @@
 (defn calculate-overall-percentages
   "calculates percentages for section keys based on a section-sums map. This will end up being the PCT column."
   [section-sums]
-  (let [all-sums (vals section-sums)
+  (let [all-sums (vals (dissoc section-sums ::sum)) ;;mind the ::sum field...
         overall-sum (reduce + all-sums)
         percentage #(if (zero? %) 0 (/ (* 100 %) overall-sum))
         formatted-percentage #(if (zero? (percentage %)) "-" (str (.toFixed (percentage %) 2) \%))]
@@ -339,6 +339,7 @@
 
 (reg-event-db :include-yan?
               (fn [db _]
+                (dispatch [:calculate-data-table])
                 (update db :include-yan? not)))
 
 
@@ -355,7 +356,14 @@
 
 (reg-event-db :calculate-data-table
               (fn [db _]
-                (assoc db :data-table (calculate-data-table @(:conn db) +dashboard-sections+ +labsters+))))
+                (let [user-map-with-yan +labsters+
+                      user-map-without-yan (dissoc +labsters+ :labster/yan)
+                      include-yan? (:include-yan? db)]
+                  (assoc db :data-table (calculate-data-table @(:conn db)
+                                                              +dashboard-sections+
+                                                              (if include-yan?
+                                                                user-map-with-yan
+                                                                user-map-without-yan))))))
 
 (reg-event-db :new-database
               (fn [db _]
@@ -400,10 +408,6 @@
 ;; -- Components
 (defn data-table []
   (let [data (subscribe [:data-table])
-        include-yan? (subscribe [:include-yan?])
-        yan-style #(when-not @include-yan?
-                     (when (= (:person/name %) "Yan")
-                       {:style {:color "lightgray"}}))
         show-percentages? (subscribe [:show-percentages?])
         from-to (subscribe [:from-to])
         rows (reaction (vals @data))
@@ -425,9 +429,8 @@
           (for [c @sorted-columns]
             (let [on-click (click-col-action c)]
               (conj ^{:key [:header c]}
-                    [:th (merge (yan-style c)
-                                (when on-click
-                                  {:on-click #(on-click (:from @from-to))}))
+                    [:th (when on-click
+                           {:on-click #(on-click (:from @from-to))})
                      ]
                     (name-for-column c)))))]]
        [:tbody
@@ -440,8 +443,7 @@
              (for [person @sorted-columns]
                (do
                  ^{:key [:td rk person]}
-                 [:td (yan-style person)
-                  (value-for-section person rk)
+                 [:td (value-for-section person rk)
                   (when @show-percentages?
                     (when-let [pct (calculate-user-percentage person rk)]
                       (str " (" pct ")")))])))]))]])))
