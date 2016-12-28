@@ -62,7 +62,7 @@
                         :data-table nil
                         :show-percentages? false
                         :loading? true
-                        :include-yan? false})
+                        :include-yan? true})
 
 
 
@@ -414,22 +414,29 @@
        [:thead
         [:tr
          [:th "-"]
-         (for [c @sorted-columns]
-           (let [on-click (click-col-action c)]
-             (conj [:th (when on-click
-                          {:on-click (on-click (:from @from-to))})
-                    ]
-                   (name-for-column c))))]]
+         (doall
+          (for [c @sorted-columns]
+            (let [on-click (click-col-action c)]
+              (conj ^{:key [:header c]}
+                    [:th (when on-click
+                           {:on-click (on-click (:from @from-to))})
+                     ]
+                    (name-for-column c)))))]]
        [:tbody
-        (for [rk row-keys]
-          [:tr
-           [:th {:on-click (click-row-action rk)} (name-for-row rk)]
-           (for [person @sorted-columns]
-             (do
-               [:td (value-for-section person rk)
-                (when @show-percentages?
-                  (when-let [pct (calculate-user-percentage person rk)]
-                    (str " (" pct ")")))]))])]])))
+        (doall
+         (for [rk row-keys]
+           ^{:key [:tr rk]}
+           [:tr
+            [:th {:on-click (click-row-action rk)} (name-for-row rk)]
+            (doall
+             (for [person @sorted-columns]
+               (do
+                 ^{:key [:td rk person]}
+                 [:td (value-for-section person rk)
+                  (when @show-percentages?
+                    (when-let [pct (calculate-user-percentage person rk)]
+                      (prn pct )
+                      (str " (" pct ")")))])))]))]])))
 
 
 (defn dashboard-page []
