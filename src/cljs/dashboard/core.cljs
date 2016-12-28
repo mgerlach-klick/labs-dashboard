@@ -265,12 +265,11 @@
 (defn calculate-section-sums
   "Calculates a total for all the keys in the sections map. This will end up being the 'sum' column."
   [sections users]
-  (into (hash-map)
-        (let [sum (partial reduce +)]
-          (reduce (fn [m k]
-                    (let [summed-values (sum (map #(get-in % [k :value]) users))]
-                      (assoc m k summed-values)))
-                  {} (keys sections)))))
+  (let [sum (partial reduce +)]
+    (reduce (fn [m k]
+              (let [summed-values (sum (map #(get % k) users))]
+                (assoc m k summed-values)))
+            {} (keys sections))))
 
 
 
@@ -279,9 +278,15 @@
   [user section-key]
   (let [user-sum (get user ::sum)
         user-val (get user section-key)
-        percentage (if (zero? user-val) 0 (/ (* 100 user-val) user-sum))
-        formatted-percentage (if (zero? percentage) nil (str (.toFixed percentage 0) \%))]
-    formatted-percentage))
+        percentage (if (zero? user-val)
+                     0
+                     (/ (* 100 user-val) user-sum))
+        formatted-percentage (if (zero? percentage)
+                               nil
+                               (str (.toFixed percentage 0) \%))]
+    (if (number? user-val) ; handles the PCT column edge case
+      formatted-percentage
+      nil)))
 
 
 
@@ -402,6 +407,7 @@
                          (vals @data)
                          (vals (dissoc @data :labster/yan))))
         sorted-columns (reaction (sort-by :display-index < @rows))
+
         row-keys (keys +dashboard-sections+)
         name-for-row #(get-in +dashboard-sections+ [% :display-name] )
         click-row-action #(get-in +dashboard-sections+ [% :on-click] )
@@ -419,7 +425,7 @@
             (let [on-click (click-col-action c)]
               (conj ^{:key [:header c]}
                     [:th (when on-click
-                           {:on-click (on-click (:from @from-to))})
+                           {:on-click #(on-click (:from @from-to))})
                      ]
                     (name-for-column c)))))]]
        [:tbody
@@ -435,7 +441,6 @@
                  [:td (value-for-section person rk)
                   (when @show-percentages?
                     (when-let [pct (calculate-user-percentage person rk)]
-                      (prn pct )
                       (str " (" pct ")")))])))]))]])))
 
 
@@ -483,6 +488,7 @@
          [:div.row
           "Include Yan: " [:input {:type :checkbox
                                    :value @include-yan?
+                                   :default-checked @include-yan?
                                    :on-change #(dispatch [:include-yan?])}]]
          ]
 
@@ -504,11 +510,8 @@
          [:div.row
           [:div.col-sm-12
            [data-table]
-           ;; (if @show-percentages?
-           ;;   [dashboard-percentage-table @billing-matrix (:to @from-to)]
-           ;;   [dashboard-table @billing-matrix (:to @from-to)])
            ]
-          [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
+          [:h3.text-right {:style {:color "gray"}} #_@last-fetch (if @include-yan? "include yan" "disclude yan")]])])))
 
 
 ;; -------------------------
