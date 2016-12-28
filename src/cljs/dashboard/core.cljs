@@ -401,11 +401,12 @@
 (defn data-table []
   (let [data (subscribe [:data-table])
         include-yan? (subscribe [:include-yan?])
+        yan-style #(when-not @include-yan?
+                     (when (= (:person/name %) "Yan")
+                       {:style {:color "lightgray"}}))
         show-percentages? (subscribe [:show-percentages?])
         from-to (subscribe [:from-to])
-        rows (reaction (if @include-yan?
-                         (vals @data)
-                         (vals (dissoc @data :labster/yan))))
+        rows (reaction (vals @data))
         sorted-columns (reaction (sort-by :display-index < @rows))
 
         row-keys (keys +dashboard-sections+)
@@ -424,8 +425,9 @@
           (for [c @sorted-columns]
             (let [on-click (click-col-action c)]
               (conj ^{:key [:header c]}
-                    [:th (when on-click
-                           {:on-click #(on-click (:from @from-to))})
+                    [:th (merge (yan-style c)
+                                (when on-click
+                                  {:on-click #(on-click (:from @from-to))}))
                      ]
                     (name-for-column c)))))]]
        [:tbody
@@ -438,7 +440,8 @@
              (for [person @sorted-columns]
                (do
                  ^{:key [:td rk person]}
-                 [:td (value-for-section person rk)
+                 [:td (yan-style person)
+                  (value-for-section person rk)
                   (when @show-percentages?
                     (when-let [pct (calculate-user-percentage person rk)]
                       (str " (" pct ")")))])))]))]])))
@@ -511,7 +514,7 @@
           [:div.col-sm-12
            [data-table]
            ]
-          [:h3.text-right {:style {:color "gray"}} #_@last-fetch (if @include-yan? "include yan" "disclude yan")]])])))
+          [:h3.text-right {:style {:color "gray"}} @last-fetch]])])))
 
 
 ;; -------------------------
