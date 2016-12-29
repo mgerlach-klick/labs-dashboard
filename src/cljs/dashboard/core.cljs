@@ -374,6 +374,21 @@
                   db)))
 
 
+;; -- CSV ---------------------------------------------------
+
+(defn data-table-to-vec
+  [data-table section-map sections users]
+  (let [headers (-> data-table
+                    (select-keys users)
+                    (vals)
+                    ((partial map :display-name)))
+        user-map (-> data-table (select-keys users))
+        value-rows (for [s sections]
+                     (concat
+                      [(:display-name (get section-map s))]
+                      (map #(get % s) (vals user-map))))]
+    (concat [(concat ["-"] headers)]
+            value-rows)))
 
 
 ;; -- Subscription Handlers ---------------------------------------------------
@@ -413,13 +428,15 @@
         rows (reaction (vals @data))
         sorted-columns (reaction (sort-by :display-index < @rows))
 
+
         row-keys (keys +dashboard-sections+)
         name-for-row #(get-in +dashboard-sections+ [% :display-name] )
         click-row-action #(get-in +dashboard-sections+ [% :on-click] )
         click-col-action #(get % :on-click )
         name-for-column #(get % :display-name)
         get-sum #(::sum %)
-        value-for-section #(format-hours (get %1 %2))]
+        value-for-section #(format-hours (get %1 %2))
+        ]
     (fn []
       [:table.ui.celled.striped.table
        [:thead
@@ -455,8 +472,14 @@
         loading? (subscribe [:loading?])
         show-percentages? (subscribe [:show-percentages?])
         include-yan? (subscribe [:include-yan?])
-        ;;csv-billing-matrix (reaction (vec2csv @billing-matrix))
+        data (subscribe [:data-table])
         csv-billing-matrix-filename (reaction (str "labs-billability_" (:from @from-to) "__" (:to @from-to) ".csv"))
+        csv-link (reaction
+                  (vec2csv
+                   (data-table-to-vec @data
+                    +dashboard-sections+
+                                      (remove #{::sum} (keys +dashboard-sections+))
+                                      (keys +labsters+))))
         ]
     (fn []
       [:div
@@ -505,7 +528,7 @@
                                                       (dispatch [:new-database])
                                                       ))} "Make it so" ]
          [:hr]
-         [:a {:href nil #_@csv-billing-matrix :download @csv-billing-matrix-filename}
+         [:a {:href @csv-link :download @csv-billing-matrix-filename}
           [:div.btn-primary.btn  "Download as CSV" ]]]]
 
        [:hr]

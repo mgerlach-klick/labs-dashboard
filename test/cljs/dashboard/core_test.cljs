@@ -13,6 +13,9 @@
         (d/transact! test-db))
     (prn 'DONE)))
 
+(def derefed-test-db @test-db
+  )
+
 (use-fixtures :once
   {:before (fn [] (create-test-db))})
 
