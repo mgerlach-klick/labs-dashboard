@@ -1,5 +1,6 @@
 (ns ^:figwheel-no-load dashboard.dev
   (:require [dashboard.core :as core]
+            [dashboard.core-test]
             [figwheel.client :as figwheel :include-macros true]))
 
 (enable-console-print!)

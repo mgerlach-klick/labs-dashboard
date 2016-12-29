@@ -16,8 +16,7 @@
                                    reg-sub
                                    dispatch
                                    dispatch-sync
-                                   subscribe]
-             :as rf]
+                                   subscribe] :as rf]
             ;; [re-frame-datatable.core :as dt]
 
             [dashboard.queries :refer [;time-spent-on-projs
@@ -63,7 +62,6 @@
                         :show-percentages? false
                         :loading? true
                         :include-yan? true})
-
 
 
 

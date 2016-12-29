@@ -96,6 +96,7 @@
 
   :profiles {:dev {:repl-options {:init-ns dashboard.repl
                                   :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]
+                                  :analyze-path ["src/cljs" "test/cljs"]
                                   }
 
                    :dependencies [[ring/ring-mock "0.3.0"]
