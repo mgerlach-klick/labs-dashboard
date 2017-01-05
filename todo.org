@@ -1,0 +1,11 @@
+* Todo
+x - change 'klick billable' to 'client work' and use the metric:
+  - not charged to Klick Inc
+
+x Eliminate Labs billable project
+
+Get list of people that were at labs temporarily
+
+x Remove PCT column
+
+Write tests based on James' spreadsheet for Max 2016

@@ -53,7 +53,8 @@
 
 
 (defn time-spent-not-billable
-  "Time that user with userid $uid spent on non-billable projects"
+  "Time that user with userid $uid spent on non-billable projects
+  Defined as anything that gets billed to KlickInc (company ID 1) and isn't a specific lab project"
   [db uid]
   (or
    (d/q '[:find (sum ?duration) .
@@ -61,12 +62,11 @@
           :with ?p
           :where
           [?p :UserID ?uid]
-          [?p :IsClientBillable false]
           [?p :Duration ?mins]
           [?p :ProjectID ?pid]
           [(/ ?mins 60) ?duration]
           ;; +labs-projects+
-          [(get-else $ ?e :IsClientBillable false)]
+          [?p :CompanyID 1] ;Klick
           ;; [(= :nil ?nobill)]
           (not-labs-project? ?p)
           ]
@@ -76,7 +76,8 @@
    0))
 
 (defn time-spent-on-billable-projects
-  "Time that user with userid $uid spent on billable non-labs projects"
+  "Time that user with userid $uid spent on billable non-labs projects.
+  Defined as anything that doesn't get billed to KlickInc (company ID 1)"
   [db uid]
   (or
    (d/q '[:find (sum ?duration) .
@@ -84,9 +85,8 @@
           :with ?p
           :where
           [?p :UserID ?uid]
-          [?p :ProjectID ?pid]
-          [?p :IsClientBillable true]
-          (not-labs-project? ?p)
+          [?p :CompanyID ?cid]
+          [(not= ?cid 1)] ;Klick
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
           ]

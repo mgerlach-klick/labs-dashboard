@@ -5,3 +5,5 @@ figwheel_server.log
 dist/js
 /.lein-repl-history
 .lein-failures
+dist/js/app.js
+/.nrepl-history

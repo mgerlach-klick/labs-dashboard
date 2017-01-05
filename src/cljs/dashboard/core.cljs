@@ -200,13 +200,13 @@
      (str "https://genome.klick.com/tasks/project/home/" projid))))
 
 (def +dashboard-sections+ {
-                        ::labs-billable {:display-name "Labs Billable"
+                        ::labs-billable {:display-name "Labs Billable (deprecated)"
                                          :sort-index 1
                                          :calculation (fn [db uid]
                                                         (time-spent-on-tag db :labs-billable uid))
                                          :on-click (open-genome-project-home (:labs-billable +lab-projects+))}
 
-                        ::klick-billable {:display-name "Klick Billable"
+                        ::klick-billable {:display-name "Client Work"
                                           :sort-index 2
                                           :calculation (fn [db uid]
                                                          (time-spent-on-billable-projects db uid))}
@@ -313,9 +313,10 @@
            :section/sum (assoc section-sums
                                :display-name "SUM"
                                :display-index 99)
-           :section/pct (assoc overall-percentages
-                               :display-name "PCT"
-                               :display-index 100))))
+           ;; :section/pct (assoc overall-percentages
+           ;;                     :display-name "PCT"
+           ;;                     :display-index 100)
+           )))
 
 
 ;; -- Event Handlers ----------------------------------------------------------

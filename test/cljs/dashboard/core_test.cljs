@@ -95,7 +95,7 @@
                                   ::klick-billable)
     "57%")))
 
-(deftest calculate-overall-percentages
+#_(deftest calculate-overall-percentages
   (is (=
        (dc/calculate-overall-percentages {:dashboard.core/klick-billable 0,
                                           :dashboard.core/labs-billable 0,
