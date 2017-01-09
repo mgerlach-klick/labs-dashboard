@@ -1,6 +1,7 @@
 (ns dashboard.core
   (:require-macros [cljs.core.async.macros :refer [go]]
-                   [reagent.ratom :refer [reaction]])
+                   [reagent.ratom :refer [reaction]]
+                   [cljs.test :refer [deftest]])
   (:require [reagent.core :as reagent :refer [atom]]
             [cljs-http.client :as http]
             [cljs.core.async :refer [<! put! take!]]
@@ -75,12 +76,17 @@
      (str "https://genome.klick.com/scheduler/#/week/" date "/user/" uid))))
 
 
-(defn mk-person [name uid idx]
-  {:display-name name
-   :person/name name
-   :person/userid uid
-   :display-index idx
-   :on-click (open-genome-scheduler uid)})
+(defn mk-person
+  ([name uid idx]
+   {:view/name name
+    :person/name name
+    :person/userid uid
+    :view/index idx
+    :on-click (open-genome-scheduler uid)})
+  ([name uid idx from to]
+   (-> (mk-person name uid idx)
+       (assoc :labs/from from
+              :labs/to to))))
 
 
 (def +labsters+ {
@@ -92,7 +98,9 @@
                  :labster/max (mk-person "Max"  4966 4)
                  :labster/kat (mk-person "Kat" 5904 5)
                  :labster/pete (mk-person "Pete" 5466 6)
-                 :labster/stephen (mk-person "Stephen" 5417 7)
+                 :labster/stephen (mk-person "Stephen" 5417 7 #inst "2016-07-15" #inst "2016-12-31")
+                 :labster/pj (mk-person "PJ" 5017 8 #inst "2016-01-01" #inst "2016-07-01")
+                 :labster/elie (mk-person "Elie" 5997 9 #inst "2016-02-01" #inst "2016-09-09")
                  })
 
 (defn all-user-ids [users]
@@ -111,6 +119,32 @@
 
 
 ;;------- get data
+
+(defn datestring? [s]
+  (when (string? s)
+    (re-matches #"/Date\((\d+)-(\d\d\d\d)\)/" s)))
+
+(defn datestring-to-instant
+  "This disregards timezones for now"
+  [datestr]
+  (some-> (datestring? datestr)
+          second
+          (js/parseInt)
+          (js/Date.)))
+
+(deftest datestring-to-instant-test
+  (cljs.test/is (= #inst "2013-06-03T04"
+         (datestring-to-instant   "/Date(1370232000000-0000)/"))))
+
+(defn convert-datestrings
+  "Changes the useless genome datestrings to actual dates that we can work with "
+  [m]
+  (reduce (fn [m [k v]]
+            (assoc m k (if (datestring? v)
+                         (datestring-to-instant v)
+                         v)))
+          {} m))
+
 (defn <time-entry
   ""
   [start end userids]
@@ -131,6 +165,10 @@
                                                (->> response
                                                     :body
                                                     :Entries
+                                                    (map convert-datestrings)
+                                                    (#(do
+                                                        (def entries %);; keep the entries around, just to make testing in the repl easier
+                                                        %))
                                                     (d/transact! conn))
                                                (prn "received" (count (-> response :body :Entries)) "records")
                                                (dispatch [:update-last-fetch])
@@ -200,47 +238,47 @@
      (str "https://genome.klick.com/tasks/project/home/" projid))))
 
 (def +dashboard-sections+ {
-                        ::labs-billable {:display-name "Labs Billable (deprecated)"
+                        ::labs-billable {:view/name "Labs Billable (deprecated)"
                                          :sort-index 1
                                          :calculation (fn [db uid]
                                                         (time-spent-on-tag db :labs-billable uid))
                                          :on-click (open-genome-project-home (:labs-billable +lab-projects+))}
 
-                        ::klick-billable {:display-name "Client Work"
+                        ::klick-billable {:view/name "Client Work"
                                           :sort-index 2
                                           :calculation (fn [db uid]
                                                          (time-spent-on-billable-projects db uid))}
 
-                        ::non-billable {:display-name "Non-Billable"
+                        ::non-billable {:view/name "Non-Billable"
                                         :sort-index 3
                                         :calculation (fn [db uid]
                                                        (time-spent-not-billable db uid))}
 
-                        ::admin {:display-name "Administration"
+                        ::admin {:view/name "Administration"
                                  :sort-index 4
                                  :calculation (fn [db uid]
                                                 (time-spent-on-tag db :admin uid))
                                  :on-click (open-genome-project-home (:admin +lab-projects+))}
 
-                        ::experiments {:display-name "Experiments"
+                        ::experiments {:view/name "Experiments"
                                        :sort-index 5
                                        :calculation (fn [db uid]
                                                       (time-spent-on-tag db :experiments uid))
                                        :on-click (open-genome-project-home (:experiments +lab-projects+))}
 
-                        ::studies {:display-name "Studies"
+                        ::studies {:view/name "Studies"
                                    :sort-index 6
                                    :calculation (fn [db uid]
                                                   (time-spent-on-tag db :studies uid))
                                    :on-click (open-genome-project-home (:studies +lab-projects+))}
 
-                        ::promo {:display-name "Promotion"
+                        ::promo {:view/name "Promotion"
                                  :sort-index 7
                                  :calculation (fn [db uid]
                                                 (time-spent-on-tag db :promo uid))
                                  :on-click (open-genome-project-home (:promo +lab-projects+))}
 
-                        ::sum {:display-name "SUM"
+                        ::sum {:view/name "SUM"
                                :sort-index 8
                                :calculation total-time-booked}
                         })
@@ -311,11 +349,11 @@
         overall-percentages (calculate-overall-percentages section-sums)]
     (assoc calc-users-map
            :section/sum (assoc section-sums
-                               :display-name "SUM"
-                               :display-index 99)
+                               :view/name "SUM"
+                               :view/index 99)
            ;; :section/pct (assoc overall-percentages
-           ;;                     :display-name "PCT"
-           ;;                     :display-index 100)
+           ;;                     :view/name "PCT"
+           ;;                     :view/index 100)
            )))
 
 
@@ -380,11 +418,11 @@
   (let [headers (-> data-table
                     (select-keys users)
                     (vals)
-                    ((partial map :display-name)))
+                    ((partial map :view/name)))
         user-map (-> data-table (select-keys users))
         value-rows (for [s sections]
                      (concat
-                      [(:display-name (get section-map s))]
+                      [(:view/name (get section-map s))]
                       (map #(get % s) (vals user-map))))]
     (concat [(concat ["-"] headers)]
             value-rows)))
@@ -425,14 +463,14 @@
         show-percentages? (subscribe [:show-percentages?])
         from-to (subscribe [:from-to])
         rows (reaction (vals @data))
-        sorted-columns (reaction (sort-by :display-index < @rows))
+        sorted-columns (reaction (sort-by :view/index < @rows))
 
 
         row-keys (keys +dashboard-sections+)
-        name-for-row #(get-in +dashboard-sections+ [% :display-name] )
+        name-for-row #(get-in +dashboard-sections+ [% :view/name] )
         click-row-action #(get-in +dashboard-sections+ [% :on-click] )
         click-col-action #(get % :on-click )
-        name-for-column #(get % :display-name)
+        name-for-column #(get % :view/name)
         get-sum #(::sum %)
         value-for-section #(format-hours (get %1 %2))
         ]
