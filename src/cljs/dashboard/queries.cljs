@@ -15,22 +15,6 @@
                  ]])
 
 
-;; (defn time-spent-on-projs
-;;   "All projects for user with $name"
-;;   [db name]
-;;   (d/q '[:find ?p (sum ?duration) .
-;;          :in $ ?name
-;;          :with ?p
-;;          :where
-;;          [?l :person/name ?name]
-;;          [?l :person/userid ?id]
-;;          [?p :UserID ?id]
-;;          [?p :ProjectName ?proj]
-;;          [?p :Duration ?d]
-;;          [(/ ?d 60) ?duration]
-;;          ]
-;;        db
-;;        name))
 
 (defn time-spent-on-projid
   "Time that user with uid $uid spent on project with $projid"

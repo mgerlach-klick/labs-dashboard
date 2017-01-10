@@ -79,7 +79,6 @@
 (defn mk-person
   ([name uid idx]
    {:view/name name
-    :person/name name
     :person/userid uid
     :view/index idx
     :on-click (open-genome-scheduler uid)})
