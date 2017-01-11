@@ -58,7 +58,6 @@
                         :from (first (last-n-months 1))
                         :to (second (last-n-months 1))
                         :last-fetch nil
-                        ;; :calculated-billing-matrix nil
                         :data-table nil
                         :show-percentages? false
                         :loading? true
@@ -82,15 +81,17 @@
     :person/userid uid
     :view/index idx
     :on-click (open-genome-scheduler uid)})
-  ([name uid idx from to]
+  ([name uid idx from]
    (-> (mk-person name uid idx)
-       (assoc :labs/from from
-              :labs/to to))))
+       (assoc :labs/from from)))
+  ([name uid idx from to]
+   (-> (mk-person name uid idx from)
+       (assoc :labs/to to))))
 
 
 (def +labsters+ {
                  :labster/yan (mk-person "Yan" 5959 20)
-                 :labster/carolyn (mk-person "Carolyn" 5123 8)
+                 :labster/carolyn (mk-person "Carolyn" 5123 8 #inst "2016-11-14")
                  :labster/andrew (mk-person "Andrew" 6157 1)
                  :labster/ken (mk-person "Ken" 4803 3)
                  :labster/ani (mk-person "Ani" 6308 2)
@@ -106,8 +107,7 @@
   (map :person/userid (vals users)))
 
 
-(def +lab-projects+ {:labs-billable 23409
-                     :admin  16897
+(def +lab-projects+ {:admin  16897
                      :studies 23405
                      :experiments 23404
                      :promo 22295})
@@ -116,6 +116,54 @@
 (defn project-id-for-tag [tag]
   (get +lab-projects+ tag))
 
+
+(defn time-spent-on-tag [db tag uid]
+  (time-spent-on-projid db (project-id-for-tag tag) uid))
+
+(defn open-genome-project-home [projid]
+  (fn []
+    (js/window.open
+     (str "https://genome.klick.com/tasks/project/home/" projid))))
+
+(def +dashboard-sections+ {
+                        ::klick-billable {:view/name "Client Work"
+                                          :sort-index 2
+                                          :calculation (fn [db uid]
+                                                         (time-spent-on-billable-projects db uid))}
+
+                        ::non-billable {:view/name "Non-Billable"
+                                        :sort-index 3
+                                        :calculation (fn [db uid]
+                                                       (time-spent-not-billable db uid))}
+
+                        ::admin {:view/name "Administration"
+                                 :sort-index 4
+                                 :calculation (fn [db uid]
+                                                (time-spent-on-tag db :admin uid))
+                                 :on-click (open-genome-project-home (:admin +lab-projects+))}
+
+                        ::experiments {:view/name "Experiments"
+                                       :sort-index 5
+                                       :calculation (fn [db uid]
+                                                      (time-spent-on-tag db :experiments uid))
+                                       :on-click (open-genome-project-home (:experiments +lab-projects+))}
+
+                        ::studies {:view/name "Studies"
+                                   :sort-index 6
+                                   :calculation (fn [db uid]
+                                                  (time-spent-on-tag db :studies uid))
+                                   :on-click (open-genome-project-home (:studies +lab-projects+))}
+
+                        ::promo {:view/name "Promotion"
+                                 :sort-index 7
+                                 :calculation (fn [db uid]
+                                                (time-spent-on-tag db :promo uid))
+                                 :on-click (open-genome-project-home (:promo +lab-projects+))}
+
+                        ::sum {:view/name "SUM"
+                               :sort-index 8
+                               :calculation total-time-booked}
+                        })
 
 ;;------- get data
 
@@ -133,7 +181,7 @@
 
 (deftest datestring-to-instant-test
   (cljs.test/is (= #inst "2013-06-03T04"
-         (datestring-to-instant   "/Date(1370232000000-0000)/"))))
+         (datestring-to-instant "/Date(1370232000000-0000)/"))))
 
 (defn convert-datestrings
   "Changes the useless genome datestrings to actual dates that we can work with "
@@ -171,7 +219,6 @@
                                                     (d/transact! conn))
                                                (prn "received" (count (-> response :body :Entries)) "records")
                                                (dispatch [:update-last-fetch])
-                                               ;; (dispatch [:calculate-billing-matrix])
                                                (dispatch [:calculate-data-table])
                                                (dispatch [:loading? false]))))))
 
@@ -228,59 +275,6 @@
 ;; Views
 
 
-(defn time-spent-on-tag [db tag uid]
-  (time-spent-on-projid db (project-id-for-tag tag) uid))
-
-(defn open-genome-project-home [projid]
-  (fn []
-    (js/window.open
-     (str "https://genome.klick.com/tasks/project/home/" projid))))
-
-(def +dashboard-sections+ {
-                        ::labs-billable {:view/name "Labs Billable (deprecated)"
-                                         :sort-index 1
-                                         :calculation (fn [db uid]
-                                                        (time-spent-on-tag db :labs-billable uid))
-                                         :on-click (open-genome-project-home (:labs-billable +lab-projects+))}
-
-                        ::klick-billable {:view/name "Client Work"
-                                          :sort-index 2
-                                          :calculation (fn [db uid]
-                                                         (time-spent-on-billable-projects db uid))}
-
-                        ::non-billable {:view/name "Non-Billable"
-                                        :sort-index 3
-                                        :calculation (fn [db uid]
-                                                       (time-spent-not-billable db uid))}
-
-                        ::admin {:view/name "Administration"
-                                 :sort-index 4
-                                 :calculation (fn [db uid]
-                                                (time-spent-on-tag db :admin uid))
-                                 :on-click (open-genome-project-home (:admin +lab-projects+))}
-
-                        ::experiments {:view/name "Experiments"
-                                       :sort-index 5
-                                       :calculation (fn [db uid]
-                                                      (time-spent-on-tag db :experiments uid))
-                                       :on-click (open-genome-project-home (:experiments +lab-projects+))}
-
-                        ::studies {:view/name "Studies"
-                                   :sort-index 6
-                                   :calculation (fn [db uid]
-                                                  (time-spent-on-tag db :studies uid))
-                                   :on-click (open-genome-project-home (:studies +lab-projects+))}
-
-                        ::promo {:view/name "Promotion"
-                                 :sort-index 7
-                                 :calculation (fn [db uid]
-                                                (time-spent-on-tag db :promo uid))
-                                 :on-click (open-genome-project-home (:promo +lab-projects+))}
-
-                        ::sum {:view/name "SUM"
-                               :sort-index 8
-                               :calculation total-time-booked}
-                        })
 
 
 (defn add-section-items-to-user
@@ -350,9 +344,6 @@
            :section/sum (assoc section-sums
                                :view/name "SUM"
                                :view/index 99)
-           ;; :section/pct (assoc overall-percentages
-           ;;                     :view/name "PCT"
-           ;;                     :view/index 100)
            )))
 
 

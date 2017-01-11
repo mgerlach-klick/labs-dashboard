@@ -7,12 +7,18 @@
 
 (def ds-rules '[[(not-labs-project? ?p)
                  [?p :ProjectID ?pid]
-                 [(not= ?pid 23409)]
                  [(not= ?pid 16897)]
                  [(not= ?pid 23405)]
                  [(not= ?pid 23404)]
-                 [(not= ?pid 22295)]
-                 ]])
+                 [(not= ?pid 22295)]]
+
+                [(in-reporting-period ?person ?entry)
+                 [(get-else $ ?person :labs/from #inst "1900") ?from]
+                 [(get-else $ ?person :labs/to #inst "2100") ?to]
+                 [?entry :Date ?datetime]
+                 [(>= ?datetime ?from)]
+                 [(<= ?datetime ?to)]]
+                ])
 
 
 
@@ -21,15 +27,18 @@
   [db projid uid]
   (or
    (d/q '[:find (sum ?duration) .
-          :in $ ?uid ?projid
+          :in $ % ?uid ?projid
           :with ?p
           :where
           [?p :UserID ?uid]
           [?p :ProjectID ?projid]
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
+          [?person :person/userid ?uid]
+          (in-reporting-period ?person ?p)
           ]
         db
+        ds-rules
         uid
         projid)
    0))
@@ -53,6 +62,8 @@
           [?p :CompanyID 1] ;Klick
           ;; [(= :nil ?nobill)]
           (not-labs-project? ?p)
+          [?person :person/userid ?uid]
+          (in-reporting-period ?person ?p)
           ]
         db
         ds-rules
@@ -73,6 +84,8 @@
           [(not= ?cid 1)] ;Klick
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
+          [?person :person/userid ?uid]
+          (in-reporting-period ?person ?p)
           ]
         db
         ds-rules
@@ -85,14 +98,17 @@
   [db uid]
   (or
    (d/q '[:find (sum ?duration) .
-          :in $ ?uid
+          :in $ % ?uid
           :with ?p
           :where
           [?p :UserID ?uid]
           [?p :Duration ?mins]
           [(/ ?mins 60) ?duration]
+          [?person :person/userid ?uid]
+          (in-reporting-period ?person ?p)
           ]
         db
+        ds-rules
         uid)
    0))
 
