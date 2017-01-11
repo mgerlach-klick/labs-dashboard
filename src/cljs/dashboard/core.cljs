@@ -80,7 +80,7 @@
    {:view/name name
     :person/userid uid
     :view/index idx
-    :on-click (open-genome-scheduler uid)})
+    :view/on-click (open-genome-scheduler uid)})
   ([name uid idx from]
    (-> (mk-person name uid idx)
        (assoc :labs/from from)))
@@ -140,25 +140,25 @@
                                  :sort-index 4
                                  :calculation (fn [db uid]
                                                 (time-spent-on-tag db :admin uid))
-                                 :on-click (open-genome-project-home (:admin +lab-projects+))}
+                                 :view/on-click (open-genome-project-home (:admin +lab-projects+))}
 
                         ::experiments {:view/name "Experiments"
                                        :sort-index 5
                                        :calculation (fn [db uid]
                                                       (time-spent-on-tag db :experiments uid))
-                                       :on-click (open-genome-project-home (:experiments +lab-projects+))}
+                                       :view/on-click (open-genome-project-home (:experiments +lab-projects+))}
 
                         ::studies {:view/name "Studies"
                                    :sort-index 6
                                    :calculation (fn [db uid]
                                                   (time-spent-on-tag db :studies uid))
-                                   :on-click (open-genome-project-home (:studies +lab-projects+))}
+                                   :view/on-click (open-genome-project-home (:studies +lab-projects+))}
 
                         ::promo {:view/name "Promotion"
                                  :sort-index 7
                                  :calculation (fn [db uid]
                                                 (time-spent-on-tag db :promo uid))
-                                 :on-click (open-genome-project-home (:promo +lab-projects+))}
+                                 :view/on-click (open-genome-project-home (:promo +lab-projects+))}
 
                         ::sum {:view/name "SUM"
                                :sort-index 8
@@ -275,6 +275,21 @@
 ;; Views
 
 
+(defn daterange-in-daterange?
+"A date range is within another date range if the inner-from is after the
+  outer-from, but before the outer-to; or if the inner-to is after the
+  outer-from, but before the outer-to; or if no inner date ranges are given"
+  [[inner-from inner-to ] [outer-from outer-to]]
+  (or
+   (and
+    (nil? inner-from)
+    (nil? inner-to))
+   (and
+    (>= inner-from outer-from)
+    (<= inner-from outer-to))
+   (and
+    (>= inner-to outer-from)
+    (<= inner-to outer-to)))))
 
 
 (defn add-section-items-to-user
@@ -450,16 +465,24 @@
 ;; -- Components
 (defn data-table []
   (let [data (subscribe [:data-table])
-        show-percentages? (subscribe [:show-percentages?])
         from-to (subscribe [:from-to])
-        rows (reaction (vals @data))
-        sorted-columns (reaction (sort-by :view/index < @rows))
+        data-in-daterange (reaction (filter (fn [col]
+                                              (let [labs-from (:labs/from col)
+                                                    labs-to (:labs/to col)
+                                                    reporting-from (:from @from-to)
+                                                    reporting-to (:to @from-to)])
+                                              (daterange-in-daterange? [labs-from labs-to]
+                                                                       [reporting-from reporting-to]))
+                                            @data))
+        show-percentages? (subscribe [:show-percentages?])
+        columns (reaction (vals @data))
+        sorted-columns (reaction (sort-by :view/index < @columns))
 
 
         row-keys (keys +dashboard-sections+)
         name-for-row #(get-in +dashboard-sections+ [% :view/name] )
-        click-row-action #(get-in +dashboard-sections+ [% :on-click] )
-        click-col-action #(get % :on-click )
+        click-row-action #(get-in +dashboard-sections+ [% :view/on-click] )
+        click-col-action #(get % :view/on-click )
         name-for-column #(get % :view/name)
         get-sum #(::sum %)
         value-for-section #(format-hours (get %1 %2))
@@ -474,7 +497,7 @@
             (let [on-click (click-col-action c)]
               (conj ^{:key [:header c]}
                     [:th (when on-click
-                           {:on-click #(on-click (:from @from-to))})
+                           {:view/on-click #(on-click (:from @from-to))})
                      ]
                     (name-for-column c)))))]]
        [:tbody
@@ -482,7 +505,7 @@
          (for [rk row-keys]
            ^{:key [:tr rk]}
            [:tr
-            [:th {:on-click (click-row-action rk)} (name-for-row rk)]
+            [:th {:view/on-click (click-row-action rk)} (name-for-row rk)]
             (doall
              (for [person @sorted-columns]
                (do
@@ -519,11 +542,11 @@
        [:div.row
         [:div.col-sm-4
          [:div.row
-          [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 1)])} "Last Month"]]
+          [:div.btn.btn-default {:view/on-click #(dispatch [:set-from-to (last-n-months 1)])} "Last Month"]]
          [:div.row
-          [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 3)])} "Last 3 Months"]]
+          [:div.btn.btn-default {:view/on-click #(dispatch [:set-from-to (last-n-months 3)])} "Last 3 Months"]]
          [:div.row
-          [:div.btn.btn-default {:on-click #(dispatch [:set-from-to (last-n-months 6)])} "Last 6 Months"]]]
+          [:div.btn.btn-default {:view/on-click #(dispatch [:set-from-to (last-n-months 6)])} "Last 6 Months"]]]
 
         [:div.col-sm-4.text-right
          [:div.row
@@ -548,7 +571,7 @@
          ]
 
         [:div.col-sm-4.text-right
-         [:div.btn-success.btn.btn-lg {:on-click #(when (and (verify-is-date (:from @from-to))
+         [:div.btn-success.btn.btn-lg {:view/on-click #(when (and (verify-is-date (:from @from-to))
                                                              (verify-is-date (:to @from-to)))
                                                     (do
                                                       (dispatch [:loading? true])
