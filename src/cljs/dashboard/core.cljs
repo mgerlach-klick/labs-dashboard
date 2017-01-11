@@ -12,6 +12,7 @@
             [cljs-time.core :as t]
             [cljs-time.format :as tf]
             [testdouble.cljs.csv :as csv]
+            cljs.reader
             [re-frame.core :refer [reg-event-db
                                    path
                                    reg-sub
@@ -276,20 +277,21 @@
 
 
 (defn daterange-in-daterange?
-"A date range is within another date range if the inner-from is after the
-  outer-from, but before the outer-to; or if the inner-to is after the
-  outer-from, but before the outer-to; or if no inner date ranges are given"
+"For our purposes, a date range is within a date range, if no inner date range
+  is defined; or if the inner-from is earlier than the outer-to; and if the
+  inner-to is later than outer-from"
   [[inner-from inner-to ] [outer-from outer-to]]
   (or
    (and
     (nil? inner-from)
     (nil? inner-to))
    (and
-    (>= inner-from outer-from)
-    (<= inner-from outer-to))
-   (and
-    (>= inner-to outer-from)
-    (<= inner-to outer-to))))
+    (or
+     (nil? inner-from)
+     (<= inner-from outer-to))
+    (or
+     (nil? inner-to)
+     (> inner-to outer-from)))))
 
 
 (defn add-section-items-to-user
@@ -466,16 +468,16 @@
 (defn data-table []
   (let [data (subscribe [:data-table])
         from-to (subscribe [:from-to])
-        data-in-daterange (reaction (filter (fn [col]
+        data-in-daterange (reaction (filter (fn [[k col]]
                                               (let [labs-from (:labs/from col)
                                                     labs-to (:labs/to col)
-                                                    reporting-from (:from @from-to)
-                                                    reporting-to (:to @from-to)]
+                                                    reporting-from (cljs.reader/parse-timestamp (:from @from-to))
+                                                    reporting-to (cljs.reader/parse-timestamp (:to @from-to))]
                                                 (daterange-in-daterange? [labs-from labs-to]
                                                                          [reporting-from reporting-to])))
                                             @data))
         show-percentages? (subscribe [:show-percentages?])
-        columns (reaction (vals @data))
+        columns (reaction (vals @data-in-daterange))
         sorted-columns (reaction (sort-by :view/index < @columns))
 
 
