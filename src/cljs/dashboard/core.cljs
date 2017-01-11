@@ -281,17 +281,13 @@
   is defined; or if the inner-from is earlier than the outer-to; and if the
   inner-to is later than outer-from"
   [[inner-from inner-to ] [outer-from outer-to]]
-  (or
-   (and
+  (and
+   (or
     (nil? inner-from)
-    (nil? inner-to))
-   (and
-    (or
-     (nil? inner-from)
-     (<= inner-from outer-to))
-    (or
-     (nil? inner-to)
-     (> inner-to outer-from)))))
+    (<= inner-from outer-to))
+   (or
+    (nil? inner-to)
+    (> inner-to outer-from))))
 
 
 (defn add-section-items-to-user
