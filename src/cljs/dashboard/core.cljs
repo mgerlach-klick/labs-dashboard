@@ -289,7 +289,7 @@
     (<= inner-from outer-to))
    (and
     (>= inner-to outer-from)
-    (<= inner-to outer-to)))))
+    (<= inner-to outer-to))))
 
 
 (defn add-section-items-to-user
@@ -470,9 +470,9 @@
                                               (let [labs-from (:labs/from col)
                                                     labs-to (:labs/to col)
                                                     reporting-from (:from @from-to)
-                                                    reporting-to (:to @from-to)])
-                                              (daterange-in-daterange? [labs-from labs-to]
-                                                                       [reporting-from reporting-to]))
+                                                    reporting-to (:to @from-to)]
+                                                (daterange-in-daterange? [labs-from labs-to]
+                                                                         [reporting-from reporting-to])))
                                             @data))
         show-percentages? (subscribe [:show-percentages?])
         columns (reaction (vals @data))
